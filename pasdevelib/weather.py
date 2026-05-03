@@ -30,11 +30,21 @@ USER_AGENT = "pasdevelib-bot/0.1 (+https://pasdevelib.fr)"
 
 
 def _to_dataframe(payload: dict) -> pd.DataFrame:
-    """Transforme la réponse Open-Meteo en DataFrame horaire."""
+    """Transforme la réponse Open-Meteo en DataFrame horaire.
+
+    Gère les transitions DST :
+    - ambiguous='NaT'              : passage heure d'hiver (1 heure dupliquée fin octobre)
+    - nonexistent='shift_forward'  : passage heure d'été (1 heure manquante fin mars)
+    """
     hourly = payload["hourly"]
     df = pd.DataFrame(hourly)
     df["time"] = pd.to_datetime(df["time"])
-    df["time"] = df["time"].dt.tz_localize("Europe/Paris", ambiguous="infer").dt.tz_convert("UTC")
+    df["time"] = (
+        df["time"]
+        .dt.tz_localize("Europe/Paris", ambiguous="NaT", nonexistent="shift_forward")
+        .dt.tz_convert("UTC")
+    )
+    df = df.dropna(subset=["time"])
     df = df.rename(columns={"time": "ts"})
     return df
 
