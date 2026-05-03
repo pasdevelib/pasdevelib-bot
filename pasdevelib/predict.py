@@ -53,45 +53,58 @@ def find_analog_days(
 ) -> pd.DataFrame:
     """Retourne les K dates historiques les plus similaires.
 
-    Filtres durs (must match):
-    - même weekday
-    - dans une fenêtre de ±season_window_days (toutes années confondues)
-    - même statut férié, même statut vacances
-    - même statut pluie (binaire)
+    Stratégie de fallback progressif si aucun voisin n'est trouvé :
+    - Niveau 1 : tous les filtres durs (weekday + saison + ferié + vacances + pluie)
+    - Niveau 2 : abandon de la fenêtre saisonnière (couvre les cas hors saison)
+    - Niveau 3 : abandon du filtre pluie (n'importe quelle météo)
+    - Niveau 4 : abandon des filtres calendaires (ferié/vacances)
+    - Niveau 5 : abandon du filtre weekday (pire cas, n'importe quel jour)
 
-    Tri par distance pondérée sur :
-    - écart température
-    - écart vent
-    - écart précipitations
+    Le scoring par distance pondérée reste identique à chaque niveau,
+    on relâche juste les filtres durs.
     """
-    df = analog_index.copy()
-
-    # Filtres durs
-    df = df[df["weekday"] == target.weekday]
-    df = df[df["is_ferie"] == target.is_ferie]
-    df = df[df["is_vacances"] == target.is_vacances]
-    df = df[df["has_rain"] == target.has_rain]
-
-    # Fenêtre saisonnière (distance circulaire en jours sur l'année)
+    base = analog_index.copy()
     target_doy = target.date.timetuple().tm_yday
-    df["doy"] = pd.to_datetime(df["date"]).dt.dayofyear
-    raw = (df["doy"] - target_doy).abs()
-    df["doy_dist"] = np.minimum(raw, 365 - raw)
-    df = df[df["doy_dist"] <= season_window_days]
+    base["doy"] = pd.to_datetime(base["date"]).dt.dayofyear
+    raw = (base["doy"] - target_doy).abs()
+    base["doy_dist"] = np.minimum(raw, 365 - raw)
+    base["d_temp"] = (base["mean_temperature"] - target.mean_temperature).abs()
+    base["d_wind"] = (base["mean_wind"] - target.mean_wind).abs()
+    base["d_precip"] = (base["total_precipitation"] - target.total_precipitation).abs()
+    base["score"] = base["d_temp"] / 3.0 + base["d_wind"] / 5.0 + base["d_precip"] / 5.0
 
-    if df.empty:
-        return df
+    levels = [
+        ("L1 strict", lambda df: df[
+            (df["weekday"] == target.weekday)
+            & (df["is_ferie"] == target.is_ferie)
+            & (df["is_vacances"] == target.is_vacances)
+            & (df["has_rain"] == target.has_rain)
+            & (df["doy_dist"] <= season_window_days)
+            & (df["d_temp"] <= temp_tolerance * 1.5)
+        ]),
+        ("L2 sans saison", lambda df: df[
+            (df["weekday"] == target.weekday)
+            & (df["is_ferie"] == target.is_ferie)
+            & (df["is_vacances"] == target.is_vacances)
+            & (df["has_rain"] == target.has_rain)
+        ]),
+        ("L3 sans pluie", lambda df: df[
+            (df["weekday"] == target.weekday)
+            & (df["is_ferie"] == target.is_ferie)
+            & (df["is_vacances"] == target.is_vacances)
+        ]),
+        ("L4 sans calendrier", lambda df: df[df["weekday"] == target.weekday]),
+        ("L5 tout", lambda df: df),
+    ]
 
-    # Distance pondérée (z-score sur les 3 features continues)
-    df["d_temp"] = (df["mean_temperature"] - target.mean_temperature).abs()
-    df["d_wind"] = (df["mean_wind"] - target.mean_wind).abs()
-    df["d_precip"] = (df["total_precipitation"] - target.total_precipitation).abs()
-    df["score"] = df["d_temp"] / 3.0 + df["d_wind"] / 5.0 + df["d_precip"] / 5.0
+    for label, flt in levels:
+        candidates = flt(base)
+        if len(candidates) >= 3:  # au moins 3 voisins pour faire une stat
+            chosen = candidates.nsmallest(k, "score")
+            print(f"[predict] {target.date} → {label} : {len(chosen)} neighbors")
+            return chosen
 
-    # Filtre tolérance température (soft)
-    df = df[df["d_temp"] <= temp_tolerance * 1.5]
-
-    return df.nsmallest(k, "score")
+    return pd.DataFrame()
 
 
 def predict_station(
