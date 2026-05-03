@@ -132,14 +132,14 @@ def run() -> None:
         # 1. Médianes
         medians = build_medians(history)
         out = tmp_dir / "medians.parquet"
-        medians.to_parquet(out, compression="zstd", index=False)
+        medians.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[aggregate] medians.parquet : {len(medians):,} rows")
 
         # 1bis. Historique horaire (pour le forecast.py)
         hourly = build_hourly_history(history)
         out = tmp_dir / "hourly_history.parquet"
-        hourly.to_parquet(out, compression="zstd", index=False)
+        hourly.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[aggregate] hourly_history.parquet : {len(hourly):,} rows")
 
@@ -150,20 +150,20 @@ def run() -> None:
 
         weather_df = weather.fetch_archive(start, end)
         out = tmp_dir / "weather.parquet"
-        weather_df.to_parquet(out, compression="zstd", index=False)
+        weather_df.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[aggregate] weather.parquet : {len(weather_df):,} rows")
 
         calendar_df = calendar_feats.build_calendar(start, end + dt.timedelta(days=30))
         out = tmp_dir / "calendar.parquet"
-        calendar_df.to_parquet(out, compression="zstd", index=False)
+        calendar_df.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[aggregate] calendar.parquet : {len(calendar_df):,} rows")
 
         # 3. Index analogue (jointure météo + calendrier)
         analog = build_analog_index(history, weather_df, calendar_df)
         out = tmp_dir / "analog_index.parquet"
-        analog.to_parquet(out, compression="zstd", index=False)
+        analog.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[aggregate] analog_index.parquet : {len(analog):,} rows")
 

@@ -87,5 +87,5 @@ def append_to_parquet(tag: str, asset_name: str, new_rows: pd.DataFrame) -> None
             df = pd.concat([df, new_rows], ignore_index=True)
         else:
             df = new_rows
-        df.to_parquet(tmp_path, compression="zstd", index=False)
+        df.to_parquet(tmp_path, compression="snappy", index=False)
         upload_asset(tag, tmp_path, asset_name)

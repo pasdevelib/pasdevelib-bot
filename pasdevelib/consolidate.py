@@ -42,12 +42,12 @@ def run() -> None:
 
         # Upload de l'archive
         archive_path = Path(tmp) / f"{yesterday_str}.parquet"
-        archive.to_parquet(archive_path, compression="zstd", index=False)
+        archive.to_parquet(archive_path, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_HISTORY, archive_path)
         print(f"[consolidate] archived {len(archive)} rows to {yesterday_str}.parquet")
 
         # Re-upload du live nettoyé
-        keep.to_parquet(live_path, compression="zstd", index=False)
+        keep.to_parquet(live_path, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_LIVE, live_path, CURRENT_ASSET)
         print(f"[consolidate] live file shrunk to {len(keep)} rows")
 

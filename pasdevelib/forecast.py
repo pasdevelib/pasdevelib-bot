@@ -169,7 +169,7 @@ def run() -> None:
         ]]
 
         out = tmp_dir / "forecast_7d.parquet"
-        result.to_parquet(out, compression="zstd", index=False)
+        result.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[forecast] forecast_7d.parquet : {len(result):,} rows uploaded")
 

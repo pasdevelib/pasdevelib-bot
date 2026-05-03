@@ -110,7 +110,7 @@ def run() -> None:
             for day, group in big.groupby("date"):
                 group = group.drop(columns=["date"])
                 out = tmp_dir / f"{day}.parquet"
-                group.to_parquet(out, compression="zstd", index=False)
+                group.to_parquet(out, compression="snappy", index=False)
                 storage.upload_asset(storage.RELEASE_HISTORY, out)
                 print(f"[bootstrap] uploaded {day}.parquet ({len(group):,} rows)")
 
