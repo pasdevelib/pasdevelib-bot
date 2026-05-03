@@ -1,0 +1,30 @@
+name: forecast
+
+on:
+  schedule:
+    # Tous les jours à 05:30 UTC (après aggregate.yml hebdo et weather.yml)
+    - cron: '30 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Run forecast
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m pasdevelib.forecast
