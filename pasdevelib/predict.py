@@ -1,4 +1,11 @@
-"""Prediction module: k-NN journees analogues avec quantiles p10/p50/p90."""
+"""Prediction module: k-NN journees analogues avec proba + quantiles fill_rate.
+
+Le parquet hourly_history contient :
+- station_id, date, hour
+- fill_rate : taux de remplissage (0-1)
+- has_velib : presence d'au moins un velo (bool)
+- has_place : presence d'au moins une place (bool)
+"""
 from __future__ import annotations
 
 import datetime as dt
@@ -19,7 +26,6 @@ class AnalogConfig:
 
 
 def _row_distance(row_a: pd.Series, row_b: pd.Series, cfg: AnalogConfig) -> float:
-    """Distance ponderee entre deux journees."""
     d = 0.0
     if pd.notna(row_a.get("temp_avg")) and pd.notna(row_b.get("temp_avg")):
         d += cfg.weight_temp * abs(row_a["temp_avg"] - row_b["temp_avg"]) / 30.0
@@ -41,7 +47,6 @@ def find_analog_days(
     candidates: pd.DataFrame,
     cfg: AnalogConfig | None = None,
 ) -> tuple[list[str], str]:
-    """Trouve les k jours les plus proches avec fallback progressif."""
     cfg = cfg or AnalogConfig()
     levels = [
         ("L1 strict", cfg),
@@ -64,36 +69,21 @@ def find_analog_days(
     return list(candidates["date"].head(min(20, len(candidates)))), "L5 fallback"
 
 
-# Mappings des noms de colonnes possibles dans hourly_history
-BIKES_COL_CANDIDATES = [
-    "num_bikes_available", "bikes_available", "bikes_median", "bikes_mean", "bikes",
-    "num_bikes", "available_bikes", "n_bikes",
-]
-DOCKS_COL_CANDIDATES = [
-    "num_docks_available", "docks_available", "docks_median", "docks_mean", "docks",
-    "num_docks", "available_docks", "n_docks",
-]
-
-
-def _detect_column(df: pd.DataFrame, candidates: list[str], label: str) -> str:
-    """Trouve la premiere colonne presente parmi les candidats."""
-    for col in candidates:
-        if col in df.columns:
-            return col
-    raise KeyError(
-        f"Aucune colonne {label} trouvee. "
-        f"Cherche parmi : {candidates}. "
-        f"Colonnes presentes : {list(df.columns)}"
-    )
-
-
 def predict_day_with_quantiles(
     target_date: dt.date,
     target_features: pd.Series,
     calendar_df: pd.DataFrame,
     hourly_history: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Predit (p10, p50, p90) pour chaque (station, hour) du jour cible."""
+    """Predit (proba_velib, proba_place, fill_rate quantiles) pour chaque (station, hour).
+
+    Sortie :
+    - proba_velib : moyenne de has_velib sur les voisins
+    - proba_place : moyenne de has_place sur les voisins
+    - prob_empty : 1 - proba_velib
+    - p25, p50, p75 : quantiles de fill_rate (0-1)
+    - n_neighbors : nombre d'observations
+    """
     candidates = calendar_df[calendar_df["date"] != target_date.isoformat()].copy()
     if len(candidates) == 0:
         return pd.DataFrame()
@@ -101,34 +91,21 @@ def predict_day_with_quantiles(
     analog_dates, level = find_analog_days(target_features, candidates)
     print(f"[predict] {target_date.isoformat()} -> {level} : {len(analog_dates)} neighbors")
 
-    # Detection auto des colonnes velos/places (premiere fois seulement)
-    if not hasattr(predict_day_with_quantiles, "_cols_detected"):
-        print(f"[predict] hourly_history columns: {list(hourly_history.columns)}")
-        bikes_col = _detect_column(hourly_history, BIKES_COL_CANDIDATES, "velos")
-        docks_col = _detect_column(hourly_history, DOCKS_COL_CANDIDATES, "places")
-        print(f"[predict] using bikes_col={bikes_col}, docks_col={docks_col}")
-        predict_day_with_quantiles._bikes_col = bikes_col
-        predict_day_with_quantiles._docks_col = docks_col
-        predict_day_with_quantiles._cols_detected = True
-
-    bikes_col = predict_day_with_quantiles._bikes_col
-    docks_col = predict_day_with_quantiles._docks_col
-
     sub = hourly_history[hourly_history["date"].isin(analog_dates)]
     if sub.empty:
         return pd.DataFrame()
 
     grouped = sub.groupby(["station_id", "hour"]).agg(
-        bikes_p10=(bikes_col, lambda x: float(np.percentile(x, 10))),
-        bikes_p50=(bikes_col, lambda x: float(np.percentile(x, 50))),
-        bikes_p90=(bikes_col, lambda x: float(np.percentile(x, 90))),
-        docks_p10=(docks_col, lambda x: float(np.percentile(x, 10))),
-        docks_p50=(docks_col, lambda x: float(np.percentile(x, 50))),
-        docks_p90=(docks_col, lambda x: float(np.percentile(x, 90))),
-        prob_empty=(bikes_col, lambda x: float((x == 0).mean())),
-        n_neighbors=(bikes_col, "size"),
+        proba_velib=("has_velib", "mean"),
+        proba_place=("has_place", "mean"),
+        p25_fill=("fill_rate", lambda x: float(np.percentile(x, 25))),
+        p50_fill=("fill_rate", lambda x: float(np.percentile(x, 50))),
+        p75_fill=("fill_rate", lambda x: float(np.percentile(x, 75))),
+        n_neighbors=("has_velib", "size"),
     ).reset_index()
 
-    grouped["date"] = target_date.isoformat()
+    grouped["prob_empty"] = 1.0 - grouped["proba_velib"]
+    grouped["target_date"] = target_date.isoformat()
     grouped["analog_level"] = level
+
     return grouped
