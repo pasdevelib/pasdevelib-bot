@@ -13,7 +13,6 @@ Schema de sortie (flux_hourly.json) consomme par le blog de la webapp :
       "capacity": int,
       "flux": {
         "0": [null x6, value, ...],   # Lundi (pandas dayofweek), 24 valeurs
-        "1": [...],                    # Mardi
         ...
         "6": [...]                     # Dimanche
       }
@@ -30,8 +29,14 @@ Methodologie :
     delta(d, h) = bikes(d, h) - bikes(d, h-1)
     flux(s, dow, h) = mean(delta) sur les jours d ou day_of_week(d) == dow
 
-  Les heures 0-5 sont masquees (None) pour ne pas melanger les flux humains
-  avec les rebalancing trucks Smovengo.
+Mapping station_id :
+  Le parquet contient un mix d'identifiants : IDs numeriques (donnees recentes)
+  et noms de stations (donnees historiques bootstrap). On tente d'abord un
+  match par ID, puis par nom (case et whitespace insensitive) pour maximiser
+  la fraction des donnees utilisables.
+
+Heures de nuit (0-5) masquees pour ne pas melanger flux humain et
+rebalancing trucks Smovengo.
 """
 from __future__ import annotations
 
@@ -51,7 +56,7 @@ HOURLY_ASSET = "hourly_history.parquet"
 STATIONS_ASSET = "stations.json"
 FLUX_ASSET = "flux_hourly.json"
 
-NIGHT_HOURS = set(range(0, 6))  # 0h-5h excluded
+NIGHT_HOURS = set(range(0, 6))
 ROUND_DECIMALS = 3
 
 
@@ -90,6 +95,32 @@ def _build_stations_meta(stations_raw: list) -> dict:
     return out
 
 
+def _normalize_name(s: str) -> str:
+    return str(s).strip().lower()
+
+
+def _build_id_resolver(stations_meta: dict):
+    """Return a function that resolves any parquet station_id to a canonical ID.
+
+    Tries direct ID match first, then a name match (case + whitespace
+    insensitive). Returns None if no match.
+    """
+    by_id = set(stations_meta.keys())
+    by_name = {
+        _normalize_name(meta.get("name", "")): sid
+        for sid, meta in stations_meta.items()
+        if meta.get("name")
+    }
+
+    def resolve(raw):
+        s = str(raw).strip()
+        if s in by_id:
+            return s
+        return by_name.get(_normalize_name(raw))
+
+    return resolve
+
+
 def _compute_flux(df: pd.DataFrame) -> pd.DataFrame:
     """Compute mean delta per (station_id, day_of_week, hour)."""
     df = df.copy()
@@ -98,13 +129,11 @@ def _compute_flux(df: pd.DataFrame) -> pd.DataFrame:
     df["hour"] = df["hour"].astype(int)
     df["day_of_week"] = df["date"].dt.dayofweek
 
-    # Sort to compute deltas correctly within each station-date group
     df = df.sort_values(["station_id", "date", "hour"]).reset_index(drop=True)
 
     df["n_bikes_prev"] = df.groupby(["station_id", "date"])["n_bikes"].shift(1)
     df["delta"] = df["n_bikes"] - df["n_bikes_prev"]
 
-    # Drop rows without a previous reference
     df = df.dropna(subset=["delta"])
 
     agg = (
@@ -120,7 +149,6 @@ def _build_output(
     stations_meta: dict,
     n_days_used: int,
 ) -> dict:
-    """Build the JSON payload consumed by the webapp blog."""
     output = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_days_used": int(n_days_used),
@@ -146,8 +174,12 @@ def _build_output(
             for _, row in sub_dow.iterrows():
                 hour = int(row["hour"])
                 if hour in NIGHT_HOURS:
-                    continue  # Keep None for night hours
-                arr[hour] = round(float(row["delta"]), ROUND_DECIMALS)
+                    continue
+                val = float(row["delta"])
+                # Skip NaN means (when groupby aggregates over all-NaN deltas)
+                if val != val:
+                    continue
+                arr[hour] = round(val, ROUND_DECIMALS)
             flux_by_dow[str(dow)] = arr
 
         output["stations"].append(
@@ -174,8 +206,33 @@ def run() -> None:
     stations_meta = _build_stations_meta(stations_raw)
     print(f"[flux] {len(stations_meta)} stations loaded")
 
+    # Resolve station_ids: direct ID match, then name match
+    print("[flux] resolving station_ids (id, then name fallback)...")
+    resolve = _build_id_resolver(stations_meta)
+
+    raw_ids = hourly["station_id"].astype(str).unique()
+    id_map = {raw: resolve(raw) for raw in raw_ids}
+    matched_by_id = sum(1 for raw, res in id_map.items() if res == raw.strip())
+    matched_by_name = sum(
+        1
+        for raw, res in id_map.items()
+        if res is not None and res != raw.strip()
+    )
+    unresolved = sum(1 for res in id_map.values() if res is None)
+    print(
+        f"[flux] resolution: {matched_by_id} by id, "
+        f"{matched_by_name} by name, {unresolved} unresolved"
+    )
+
+    hourly["station_id"] = hourly["station_id"].astype(str).map(id_map)
+    n_before = len(hourly)
+    hourly = hourly.dropna(subset=["station_id"])
+    print(
+        f"[flux] dropped {n_before - len(hourly):,} unresolved rows "
+        f"({len(hourly):,} remaining)"
+    )
+
     # Convert fill_rate to bike count using capacity
-    hourly["station_id"] = hourly["station_id"].astype(str)
     capacities = pd.Series(
         {sid: m.get("capacity", 0) for sid, m in stations_meta.items()}
     )
@@ -185,7 +242,7 @@ def run() -> None:
     n_days_used = (
         hourly["date"].nunique() if "date" in hourly.columns else 0
     )
-    print(f"[flux] {n_days_used} unique dates in history")
+    print(f"[flux] {n_days_used} unique dates after resolution")
 
     print("[flux] computing deltas and flux means...")
     flux = _compute_flux(hourly)
@@ -194,6 +251,19 @@ def run() -> None:
     print("[flux] building output payload...")
     output = _build_output(flux, stations_meta, n_days_used)
     print(f"[flux] {len(output['stations']):,} stations in output")
+
+    # Quick stats on output coverage
+    total_cells = 0
+    filled_cells = 0
+    for s in output["stations"]:
+        for dow_arr in s["flux"].values():
+            total_cells += len(dow_arr)
+            filled_cells += sum(1 for v in dow_arr if v is not None)
+    pct = (filled_cells / total_cells * 100) if total_cells else 0
+    print(
+        f"[flux] coverage: {filled_cells:,} / {total_cells:,} cells "
+        f"filled ({pct:.1f}%)"
+    )
 
     print(f"[flux] uploading {FLUX_ASSET}...")
     with tempfile.TemporaryDirectory() as tmp:
