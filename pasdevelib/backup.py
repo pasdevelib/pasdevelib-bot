@@ -26,7 +26,6 @@ Can also be triggered manually via `workflow_dispatch`.
 from __future__ import annotations
 
 import datetime as dt
-import io
 import os
 import sys
 from pathlib import Path
@@ -39,6 +38,16 @@ SOURCE_RELEASES = ["aggregates", "history"]
 BACKUP_TAG_PREFIX = "backup-"
 KEEP_BACKUPS = 30
 TIMEOUT = 60
+
+
+def _now_utc() -> dt.datetime:
+    """Timezone-aware UTC datetime (replaces deprecated utcnow())."""
+    return dt.datetime.now(dt.UTC)
+
+
+def _now_iso_z() -> str:
+    """ISO 8601 timestamp with 'Z' suffix (Zulu time), e.g. '2026-05-05T21:27:08Z'."""
+    return _now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -87,7 +96,7 @@ def create_release(repo: str, tag: str, name: str, token: str) -> dict:
         json={
             "tag_name": tag,
             "name": name,
-            "body": f"Daily backup created at {dt.datetime.utcnow().isoformat()}Z",
+            "body": f"Daily backup created at {_now_iso_z()}",
             "draft": False,
             "prerelease": True,  # keeps backups out of the "Latest" badge
         },
@@ -152,7 +161,7 @@ def upload_asset(repo: str, release: dict, path: Path, token: str) -> None:
 def main() -> int:
     token = os.environ["GITHUB_TOKEN"]
     repo = os.environ["GITHUB_REPOSITORY"]
-    today = dt.datetime.utcnow().strftime("%Y%m%d")
+    today = _now_utc().strftime("%Y%m%d")
     backup_tag = f"{BACKUP_TAG_PREFIX}{today}"
 
     print(f"== Backup pipeline: repo={repo} tag={backup_tag} ==")
