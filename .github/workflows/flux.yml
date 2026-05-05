@@ -1,0 +1,35 @@
+name: flux
+on:
+  schedule:
+    # Tous les jours à 06:00 UTC, après forecast.yml (qui termine vers 5:30-5:45)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  flux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install -e .
+      - name: Compute hourly flux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m pasdevelib.flux
+      - name: Commit flux output
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/output/flux_hourly.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update flux_hourly.json [skip ci]"
+            git push
+          fi
