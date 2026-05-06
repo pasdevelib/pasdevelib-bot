@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import io
 import json
+import math
 import tempfile
 import traceback
 from pathlib import Path
@@ -64,7 +65,6 @@ def _try_download_weather(release: str) -> pd.DataFrame | None:
         print(f"[eval.runner] no weather parquet ({e}); will run without weather features")
         return None
 
-    # Heuristic mapping: try common columns
     candidate_ts = next(
         (c for c in ("ts", "timestamp", "datetime", "time") if c in w.columns), None
     )
@@ -83,7 +83,6 @@ def _try_download_weather(release: str) -> pd.DataFrame | None:
         print("[eval.runner] weather parquet has no 'date' column; skipping")
         return None
 
-    # Aggregate to daily features
     agg_cols = {}
     if "temperature_2m" in w.columns:
         agg_cols["temp_avg"] = ("temperature_2m", "mean")
@@ -100,6 +99,7 @@ def _try_download_weather(release: str) -> pd.DataFrame | None:
         return None
 
     daily = w.groupby("date", as_index=False).agg(**agg_cols)
+    daily["date"] = daily["date"].astype(str)
     print(f"[eval.runner] weather: {len(daily)} daily rows")
     return daily
 
@@ -110,7 +110,6 @@ def _ensure_release_exists(release: str, token: str) -> dict:
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
     }
-    # Try to fetch
     r = requests.get(
         f"https://api.github.com/repos/{storage.REPO}/releases/tags/{release}",
         headers=headers,
@@ -121,7 +120,6 @@ def _ensure_release_exists(release: str, token: str) -> dict:
     if r.status_code != 404:
         r.raise_for_status()
 
-    # Create
     print(f"[eval.runner] creating release {release}")
     r = requests.post(
         f"https://api.github.com/repos/{storage.REPO}/releases",
@@ -140,6 +138,81 @@ def _ensure_release_exists(release: str, token: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Date selection — pick targets from what is ACTUALLY in hourly_history
+# ---------------------------------------------------------------------------
+
+
+def _select_target_dates(
+    hourly: pd.DataFrame,
+    n_days: int,
+    label: str = "rolling",
+) -> list[dt.date]:
+    """Pick the last n_days from hourly_history that have enough rows.
+
+    A date is "complete enough" to backtest if it has at least 50% of the
+    median row count across all dates. This filters out the day-in-progress
+    (only partial scrapes) and historical glitches.
+    """
+    if hourly.empty:
+        return []
+
+    counts = hourly.groupby("date").size()
+    counts = counts.sort_index(ascending=False)  # newest first
+
+    if counts.empty:
+        return []
+
+    median = float(counts.median())
+    threshold = median * 0.5
+    complete = counts[counts >= threshold]
+
+    if complete.empty:
+        print(
+            f"[eval.runner] {label}: no date has enough rows "
+            f"(median={median:.0f}, threshold={threshold:.0f})"
+        )
+        return []
+
+    selected = list(complete.head(n_days).index)
+    selected_dates = sorted(dt.date.fromisoformat(str(d)) for d in selected)
+
+    print(
+        f"[eval.runner] {label} window: {selected_dates[0]} .. {selected_dates[-1]} "
+        f"({len(selected_dates)} days; median rows/day={median:,.0f})"
+    )
+    return selected_dates
+
+
+# ---------------------------------------------------------------------------
+# Safe formatting helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_nan(x) -> bool:
+    if x is None:
+        return True
+    try:
+        return math.isnan(x)
+    except (TypeError, ValueError):
+        return False
+
+
+def _fmt(x, digits: int = 4) -> str:
+    """Safe float formatting: handles None, NaN, missing keys gracefully."""
+    if x is None:
+        return "None"
+    try:
+        if math.isnan(x):
+            return "nan"
+    except (TypeError, ValueError):
+        pass
+    try:
+        return f"{x:.{digits}f}"
+    except (TypeError, ValueError):
+        return str(x)
+
+
+# ---------------------------------------------------------------------------
 # Backtest loop
 # ---------------------------------------------------------------------------
 
@@ -151,17 +224,7 @@ def _backtest_window(
     weather_daily: pd.DataFrame | None,
 ) -> dict:
     """Run backtest on each target_date, compute metrics for both algorithm
-    and climatology baseline. Aggregate into a single dict ready to be
-    serialized.
-
-    Returns:
-        {
-          "daily": [...one entry per date...],
-          "global_algo": {...},
-          "global_baseline": {...},
-          "per_station": pd.DataFrame,
-          "calibration": pd.DataFrame,
-        }
+    and climatology baseline.
     """
     daily = []
     per_station_frames = []
@@ -181,12 +244,14 @@ def _backtest_window(
             continue
 
         if preds.empty or truth.empty:
-            print(f"[eval.runner] {d} skipped: empty preds or truth")
+            print(
+                f"[eval.runner] {d} skipped: "
+                f"preds={len(preds)} rows, truth={len(truth)} rows"
+            )
             continue
 
         m_algo = metrics.compute_metrics(preds, truth)
 
-        # Climatology baseline on the same target day
         try:
             base_preds = baseline.predict_climatology(d, hourly_history)
             m_base = metrics.compute_metrics(base_preds, truth)
@@ -212,10 +277,10 @@ def _backtest_window(
 
         print(
             f"[eval.runner] {d}: "
-            f"MAE={m_algo.get('mae_fill_rate', float('nan')):.4f}  "
-            f"Acc={m_algo.get('decision_accuracy_velib', float('nan')):.3f}  "
-            f"Brier={m_algo.get('brier_velib', float('nan')):.4f}  "
-            f"(baseline MAE={m_base.get('mae_fill_rate', float('nan')):.4f})"
+            f"MAE={_fmt(m_algo.get('mae_fill_rate'))}  "
+            f"Acc={_fmt(m_algo.get('decision_accuracy_velib'), 3)}  "
+            f"Brier={_fmt(m_algo.get('brier_velib'))}  "
+            f"(baseline MAE={_fmt(m_base.get('mae_fill_rate'))})"
         )
 
     global_algo = _aggregate_global(daily, "algo")
@@ -242,15 +307,33 @@ def _backtest_window(
 
 
 def _aggregate_global(daily: list[dict], key: str) -> dict:
-    """Aggregate per-day metrics into a single global summary, weighted by n."""
-    rows = [d[key] for d in daily if d.get(key, {}).get("n", 0) > 0]
+    """Aggregate per-day metrics into a single global summary, weighted by n.
+
+    Skips days where any required metric is None or NaN — they would otherwise
+    poison the average.
+    """
+    rows = []
+    for d in daily:
+        m = d.get(key, {})
+        if m.get("n", 0) <= 0:
+            continue
+        critical = ["mae_fill_rate", "decision_accuracy_velib", "brier_velib"]
+        if any(_is_nan(m.get(k)) for k in critical):
+            continue
+        rows.append(m)
+
     if not rows:
-        return {"n": 0}
+        return {"n": 0, "n_days": 0}
 
     total_n = sum(r["n"] for r in rows)
 
-    def w_mean(field: str) -> float:
-        return float(sum(r[field] * r["n"] for r in rows) / total_n)
+    def w_mean(field: str) -> float | None:
+        values = [(r.get(field), r["n"]) for r in rows if not _is_nan(r.get(field))]
+        if not values:
+            return None
+        wsum = sum(v * n for v, n in values)
+        nsum = sum(n for _, n in values)
+        return float(wsum / nsum) if nsum > 0 else None
 
     return {
         "n": int(total_n),
@@ -272,12 +355,15 @@ def _aggregate_global(daily: list[dict], key: str) -> dict:
 
 
 def _aggregate_per_station(per_station: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate per-station metrics across the window (mean of daily means,
-    weighted by n)."""
+    """Aggregate per-station metrics across the window. Drops NaN rows."""
     if per_station.empty:
         return pd.DataFrame()
 
-    g = per_station.groupby("station_id").apply(
+    clean = per_station.dropna(subset=["mae_fill", "acc_velib"])
+    if clean.empty:
+        return pd.DataFrame()
+
+    g = clean.groupby("station_id").apply(
         lambda x: pd.Series({
             "mae_fill": float(np.average(x["mae_fill"], weights=x["n"])),
             "acc_velib": float(np.average(x["acc_velib"], weights=x["n"])),
@@ -298,7 +384,8 @@ def _aggregate_per_station(per_station: pd.DataFrame) -> pd.DataFrame:
 def _upload_json_asset(release: str, asset_name: str, payload: dict) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / asset_name
-        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+        # default=str so date / numpy types serialize without crashing
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
         storage.upload_asset(release, path, asset_name)
 
 
@@ -316,24 +403,24 @@ def _upload_parquet_asset(
 # ---------------------------------------------------------------------------
 
 
-def run_rolling(n_days: int = 7) -> None:
-    """Backtest the last n_days. Overwrites rolling_* assets in release `eval`.
+def _print_summary(label: str, m: dict) -> None:
+    """Safely print an aggregated metrics block."""
+    print(
+        f"[eval.runner] {label}  "
+        f"MAE={_fmt(m.get('mae_fill_rate'))}  "
+        f"Acc(velib)={_fmt(m.get('decision_accuracy_velib'), 3)}  "
+        f"Brier={_fmt(m.get('brier_velib'))}  "
+        f"(n={m.get('n', 0):,} on {m.get('n_days', 0)} days)"
+    )
 
-    Idempotent: rerunning produces the same result modulo the addition of
-    the most recent day.
-    """
+
+def run_rolling(n_days: int = 7) -> None:
+    """Backtest the last n_days of complete data. Overwrites rolling_* assets."""
     import os
 
     token = os.environ["GITHUB_TOKEN"]
-    today = dt.date.today()
 
-    # We backtest the n_days BEFORE today. Today itself is excluded because
-    # ground truth (full day) is not yet known.
-    target_dates = [today - dt.timedelta(days=i) for i in range(n_days, 0, -1)]
-    print(
-        f"[eval.runner] === Rolling backtest: {target_dates[0]} .. {target_dates[-1]} "
-        f"({len(target_dates)} days) ==="
-    )
+    print(f"[eval.runner] === Rolling backtest (target: last {n_days} complete days) ===")
 
     print("[eval.runner] downloading hourly_history…")
     hourly = _download_parquet(storage.RELEASE_AGGREGATES, HOURLY_ASSET)
@@ -347,20 +434,21 @@ def run_rolling(n_days: int = 7) -> None:
 
     weather_daily = _try_download_weather(storage.RELEASE_AGGREGATES)
 
-    # Ensure target release exists
+    target_dates = _select_target_dates(hourly, n_days, label="rolling")
+    if not target_dates:
+        print("[eval.runner] no usable target dates; aborting")
+        return
+
     _ensure_release_exists(RELEASE_EVAL, token)
 
-    # Run the window
     result = _backtest_window(target_dates, hourly, cal, weather_daily)
 
     if not result["daily"]:
         print("[eval.runner] no daily results, nothing to upload")
         return
 
-    # Aggregate per-station across the window for top/bottom views
     per_station_global = _aggregate_per_station(result["per_station"])
 
-    # Build the JSON summary
     summary = {
         "generated_at": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "kind": "rolling",
@@ -376,7 +464,6 @@ def run_rolling(n_days: int = 7) -> None:
         ].to_dict(orient="records") if not per_station_global.empty else [],
     }
 
-    # Upload
     print("[eval.runner] uploading rolling_metrics.json…")
     _upload_json_asset(RELEASE_EVAL, "rolling_metrics.json", summary)
 
@@ -387,32 +474,17 @@ def run_rolling(n_days: int = 7) -> None:
     _upload_parquet_asset(RELEASE_EVAL, "rolling_calibration.parquet", result["calibration"])
 
     print("[eval.runner] DONE")
-    print(
-        f"[eval.runner] global ALGO     MAE={result['global_algo'].get('mae_fill_rate'):.4f}  "
-        f"Acc(velib)={result['global_algo'].get('decision_accuracy_velib'):.3f}"
-    )
-    print(
-        f"[eval.runner] global BASELINE MAE={result['global_baseline'].get('mae_fill_rate'):.4f}  "
-        f"Acc(velib)={result['global_baseline'].get('decision_accuracy_velib'):.3f}"
-    )
+    _print_summary("global ALGO    ", result["global_algo"])
+    _print_summary("global BASELINE", result["global_baseline"])
 
 
 def run_full(n_days: int = 90) -> None:
-    """One-shot full backtest. Uploads frozen baseline_<n>d_* assets.
-
-    Use this once you are happy with rolling, to establish a long-term
-    reference baseline that you can compare against after Phase 2 / Phase 3.
-    """
+    """One-shot full backtest. Uploads frozen baseline_<n>d_* assets."""
     import os
 
     token = os.environ["GITHUB_TOKEN"]
-    today = dt.date.today()
-    target_dates = [today - dt.timedelta(days=i) for i in range(n_days, 0, -1)]
 
-    print(
-        f"[eval.runner] === Full backtest: {target_dates[0]} .. {target_dates[-1]} "
-        f"({len(target_dates)} days) ==="
-    )
+    print(f"[eval.runner] === Full backtest (target: last {n_days} complete days) ===")
 
     print("[eval.runner] downloading hourly_history…")
     hourly = _download_parquet(storage.RELEASE_AGGREGATES, HOURLY_ASSET)
@@ -424,6 +496,11 @@ def run_full(n_days: int = 90) -> None:
     cal["date"] = cal["date"].astype(str)
 
     weather_daily = _try_download_weather(storage.RELEASE_AGGREGATES)
+
+    target_dates = _select_target_dates(hourly, n_days, label="full")
+    if not target_dates:
+        print("[eval.runner] no usable target dates; aborting")
+        return
 
     _ensure_release_exists(RELEASE_EVAL, token)
 
@@ -460,3 +537,5 @@ def run_full(n_days: int = 90) -> None:
     )
 
     print("[eval.runner] DONE")
+    _print_summary("global ALGO    ", result["global_algo"])
+    _print_summary("global BASELINE", result["global_baseline"])
