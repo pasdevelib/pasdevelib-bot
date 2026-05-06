@@ -337,6 +337,7 @@ def run_rolling(n_days: int = 7) -> None:
 
     print("[eval.runner] downloading hourly_history…")
     hourly = _download_parquet(storage.RELEASE_AGGREGATES, HOURLY_ASSET)
+    hourly["date"] = hourly["date"].astype(str)
     print(f"[eval.runner] hourly_history: {len(hourly):,} rows")
 
     print("[eval.runner] downloading calendar…")
@@ -415,6 +416,7 @@ def run_full(n_days: int = 90) -> None:
 
     print("[eval.runner] downloading hourly_history…")
     hourly = _download_parquet(storage.RELEASE_AGGREGATES, HOURLY_ASSET)
+    hourly["date"] = hourly["date"].astype(str)
     print(f"[eval.runner] hourly_history: {len(hourly):,} rows")
 
     print("[eval.runner] downloading calendar…")
