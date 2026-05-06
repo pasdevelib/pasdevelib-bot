@@ -1,0 +1,38 @@
+name: Eval full baseline
+
+# Manual-only. Use this once after rolling has been validated, to freeze a
+# long-term baseline. Re-run before/after Phase 2 to compare.
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Number of days to backtest (default: 90)"
+        required: false
+        default: "90"
+
+permissions:
+  contents: write
+
+jobs:
+  eval-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full backtest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVAL_FULL_DAYS: ${{ inputs.days }}
+        run: python -m scripts.run_backtest_full
