@@ -29,4 +29,4 @@ jobs:
       - name: Run rolling backtest (7 days)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m scripts.run_backtest_rolling
+        run: python -m pasdevelib.eval.run_rolling

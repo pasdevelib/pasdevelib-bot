@@ -35,4 +35,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVAL_FULL_DAYS: ${{ inputs.days }}
-        run: python -m scripts.run_backtest_full
+        run: python -m pasdevelib.eval.run_full
