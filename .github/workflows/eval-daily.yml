@@ -1,0 +1,39 @@
+name: eval-daily
+
+on:
+  schedule:
+    - cron: '30 3 * * *'   # 3h30 UTC chaque nuit (après le backup de 3h)
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run eval
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m pasdevelib.eval.eval_daily
+
+      - name: Upload metrics to yesterday's release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          YESTERDAY=$(date -u -d 'yesterday' '+%Y%m%d' 2>/dev/null || date -u -v-1d '+%Y%m%d')
+          TAG="backup-${YESTERDAY}"
+          echo "Uploading to release ${TAG}..."
+          gh release upload "${TAG}" metrics__accuracy.json --clobber \
+            --repo pasdevelib/pasdevelib-bot
