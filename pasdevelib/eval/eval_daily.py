@@ -211,7 +211,7 @@ def main() -> None:
     cal = _build_calendar(analog_idx, calendar)
 
     # Charger capacités depuis stations.json
-    stations_raw = _dl_json(tag, "stations.json")
+    stations_raw = _dl_json("live", "stations.json")
     capacities = {
         str(s.get("station_id") or s.get("stationcode") or s.get("stationCode")): int(s.get("capacity", 0) or 0)
         for s in stations_raw
@@ -249,3 +249,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
