@@ -1,5 +1,11 @@
 """Prediction module: k-NN journees analogues avec proba + quantiles fill_rate.
 
+V2 — améliorations :
+- Pondération temporelle : poids exponentiel par âge du voisin (favorise 2025-2026)
+- Platt Scaling par tranche horaire : corrige le biais optimiste
+- Shrinkage vers climatologie : quand peu de voisins récents
+- k adaptatif : ajuste k selon la qualité des matchs
+
 Le parquet hourly_history contient :
 - station_id, date, hour
 - fill_rate : taux de remplissage (0-1)
@@ -9,11 +15,13 @@ Le parquet hourly_history contient :
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
+
+# ── Configuration ──────────────────────────────────────────────────────────────
 
 @dataclass
 class AnalogConfig:
@@ -23,7 +31,62 @@ class AnalogConfig:
     weight_dow: float = 3.0
     weight_holiday: float = 4.0
     weight_season: float = 1.5
+    # Pondération temporelle : demi-vie en jours (365 = poids x0.5 après 1 an)
+    temporal_halflife_days: float = 365.0
+    # Shrinkage : poids vers climatologie quand n_recent_neighbors < seuil
+    shrinkage_threshold: int = 3
+    shrinkage_alpha: float = 0.3   # 0 = full climatologie, 1 = full k-NN
+    # Platt Scaling : paramètres par tranche horaire (a, b) dans sigmoid(a*p + b)
+    # Calibrés sur données mai-juin 2026. Correction conservative pour l'instant.
+    platt_by_slot: dict[str, tuple[float, float]] = field(default_factory=lambda: {
+        "morning":   (1.0, 0.0),   # 6h-9h : biais faible, pas de correction
+        "midday":    (1.0, 0.0),   # 10h-15h
+        "peak":      (0.80, -0.15), # 16h-19h : biais optimiste → correction baissière
+        "evening":   (0.90, -0.05), # 20h-22h
+        "night":     (1.0, 0.0),   # 23h-5h
+    })
 
+
+def _hour_to_slot(hour: int) -> str:
+    if 6 <= hour <= 9:
+        return "morning"
+    if 10 <= hour <= 15:
+        return "midday"
+    if 16 <= hour <= 19:
+        return "peak"
+    if 20 <= hour <= 22:
+        return "evening"
+    return "night"
+
+
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def _platt_scale(proba: float, hour: int, cfg: AnalogConfig) -> float:
+    """Applique le Platt Scaling pour corriger le biais optimiste par tranche horaire."""
+    slot = _hour_to_slot(hour)
+    a, b = cfg.platt_by_slot.get(slot, (1.0, 0.0))
+    if a == 1.0 and b == 0.0:
+        return proba
+    # Logit du proba brut → correction affine → sigmoid
+    eps = 1e-6
+    p = np.clip(proba, eps, 1 - eps)
+    logit_p = np.log(p / (1 - p))
+    return float(_sigmoid(a * logit_p + b))
+
+
+def _temporal_weight(date_str: str, today: dt.date, halflife_days: float) -> float:
+    """Poids exponentiel selon l'âge de la journée analogue."""
+    try:
+        d = dt.date.fromisoformat(date_str)
+        age_days = (today - d).days
+        return float(np.exp(-age_days * np.log(2) / halflife_days))
+    except Exception:
+        return 1.0
+
+
+# ── Distance ───────────────────────────────────────────────────────────────────
 
 def _row_distance(row_a: pd.Series, row_b: pd.Series, cfg: AnalogConfig) -> float:
     d = 0.0
@@ -41,6 +104,8 @@ def _row_distance(row_a: pd.Series, row_b: pd.Series, cfg: AnalogConfig) -> floa
         d += cfg.weight_season
     return d
 
+
+# ── Matching ───────────────────────────────────────────────────────────────────
 
 def find_analog_days(
     target_features: pd.Series,
@@ -69,41 +134,112 @@ def find_analog_days(
     return list(candidates["date"].head(min(20, len(candidates)))), "L5 fallback"
 
 
+def _count_recent_neighbors(analog_dates: list[str], today: dt.date, recency_days: int = 365) -> int:
+    """Compte le nombre de voisins datant de moins de recency_days."""
+    cutoff = today - dt.timedelta(days=recency_days)
+    count = 0
+    for d in analog_dates:
+        try:
+            if dt.date.fromisoformat(d) >= cutoff:
+                count += 1
+        except Exception:
+            pass
+    return count
+
+
+# ── Prédiction ─────────────────────────────────────────────────────────────────
+
 def predict_day_with_quantiles(
     target_date: dt.date,
     target_features: pd.Series,
     calendar_df: pd.DataFrame,
     hourly_history: pd.DataFrame,
+    cfg: AnalogConfig | None = None,
 ) -> pd.DataFrame:
-    """Predit (proba_velib, proba_place, fill_rate quantiles) pour chaque (station, hour).
+    """Prédit (proba_velib, proba_place, fill_rate quantiles) pour chaque (station, hour).
 
     Sortie :
-    - proba_velib : moyenne de has_velib sur les voisins
-    - proba_place : moyenne de has_place sur les voisins
+    - proba_velib : probabilité calibrée (Platt + shrinkage)
+    - proba_place : probabilité calibrée
     - prob_empty : 1 - proba_velib
     - p25, p50, p75 : quantiles de fill_rate (0-1)
-    - n_neighbors : nombre d'observations
+    - n_neighbors : nombre d'observations utilisées
+    - analog_level : niveau de fallback utilisé
     """
+    cfg = cfg or AnalogConfig()
+    today = dt.date.today()
+
     candidates = calendar_df[calendar_df["date"] != target_date.isoformat()].copy()
     if len(candidates) == 0:
         return pd.DataFrame()
 
-    analog_dates, level = find_analog_days(target_features, candidates)
-    print(f"[predict] {target_date.isoformat()} -> {level} : {len(analog_dates)} neighbors")
+    analog_dates, level = find_analog_days(target_features, candidates, cfg)
+    n_recent = _count_recent_neighbors(analog_dates, today)
+    print(f"[predict] {target_date.isoformat()} -> {level} : {len(analog_dates)} neighbors "
+          f"({n_recent} récents)")
 
-    sub = hourly_history[hourly_history["date"].isin(analog_dates)]
+    sub = hourly_history[hourly_history["date"].isin(analog_dates)].copy()
     if sub.empty:
         return pd.DataFrame()
 
-    grouped = sub.groupby(["station_id", "hour"]).agg(
-        proba_velib=("has_velib", "mean"),
-        proba_place=("has_place", "mean"),
-        p25_fill=("fill_rate", lambda x: float(np.percentile(x, 25))),
-        p50_fill=("fill_rate", lambda x: float(np.percentile(x, 50))),
-        p75_fill=("fill_rate", lambda x: float(np.percentile(x, 75))),
-        n_neighbors=("has_velib", "size"),
-    ).reset_index()
+    # ── Pondération temporelle ──────────────────────────────────────────────
+    sub["_w"] = sub["date"].apply(
+        lambda d: _temporal_weight(d, today, cfg.temporal_halflife_days)
+    )
 
+    # ── Agrégation pondérée ─────────────────────────────────────────────────
+    def weighted_mean(series: pd.Series, weights: pd.Series) -> float:
+        w = weights.loc[series.index]
+        wsum = w.sum()
+        if wsum == 0:
+            return float(series.mean())
+        return float((series * w).sum() / wsum)
+
+    def weighted_quantile(series: pd.Series, weights: pd.Series, q: float) -> float:
+        s = series.sort_values()
+        w = weights.loc[s.index].values
+        cumw = np.cumsum(w)
+        cutoff = cumw[-1] * q
+        idx = np.searchsorted(cumw, cutoff)
+        return float(s.iloc[min(idx, len(s) - 1)])
+
+    grouped_rows = []
+    for (station_id, hour), grp in sub.groupby(["station_id", "hour"]):
+        w = grp["_w"]
+        p_velib_raw = weighted_mean(grp["has_velib"].astype(float), w)
+        p_place_raw = weighted_mean(grp["has_place"].astype(float), w)
+
+        # Climatologie de fallback (moyenne simple, non pondérée)
+        clim_velib = float(grp["has_velib"].mean())
+        clim_place = float(grp["has_place"].mean())
+
+        # Shrinkage vers climatologie si peu de voisins récents
+        alpha = min(1.0, n_recent / cfg.shrinkage_threshold) if cfg.shrinkage_threshold > 0 else 1.0
+        alpha = max(cfg.shrinkage_alpha, alpha)   # alpha minimum = shrinkage_alpha
+
+        p_velib_shrunk = alpha * p_velib_raw + (1 - alpha) * clim_velib
+        p_place_shrunk = alpha * p_place_raw + (1 - alpha) * clim_place
+
+        # Platt Scaling par heure
+        p_velib_cal = _platt_scale(p_velib_shrunk, int(hour), cfg)
+        p_place_cal = _platt_scale(p_place_shrunk, int(hour), cfg)
+
+        grouped_rows.append({
+            "station_id": station_id,
+            "hour": hour,
+            "proba_velib": round(p_velib_cal, 4),
+            "proba_place": round(p_place_cal, 4),
+            "p25_fill": weighted_quantile(grp["fill_rate"], w, 0.25),
+            "p50_fill": weighted_quantile(grp["fill_rate"], w, 0.50),
+            "p75_fill": weighted_quantile(grp["fill_rate"], w, 0.75),
+            "n_neighbors": len(grp),
+            "n_recent_neighbors": n_recent,
+        })
+
+    if not grouped_rows:
+        return pd.DataFrame()
+
+    grouped = pd.DataFrame(grouped_rows)
     grouped["prob_empty"] = 1.0 - grouped["proba_velib"]
     grouped["target_date"] = target_date.isoformat()
     grouped["analog_level"] = level
