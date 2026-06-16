@@ -2,6 +2,8 @@
 name = "pasdevelib"
 version = "0.1.0"
 description = "Bot de collecte et de prédiction Vélib' pour PasDeVélib.fr"
+readme = "README.md"
+license = { text = "PolyForm Noncommercial 1.0.0" }
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31.0",
@@ -10,6 +12,11 @@ dependencies = [
     "numpy>=1.26.0",
     "python-dateutil>=2.9.0",
 ]
+
+[project.urls]
+Homepage = "https://pasdevelib.fr"
+Repository = "https://github.com/pasdevelib/pasdevelib-bot"
+"Bug Tracker" = "https://github.com/pasdevelib/pasdevelib-bot/issues"
 
 [build-system]
 requires = ["setuptools>=68"]
