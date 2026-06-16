@@ -90,16 +90,27 @@ def _temporal_weight(date_str: str, today: dt.date, halflife_days: float) -> flo
 
 def _row_distance(row_a: pd.Series, row_b: pd.Series, cfg: AnalogConfig) -> float:
     d = 0.0
+    # Température moyenne
     if pd.notna(row_a.get("temp_avg")) and pd.notna(row_b.get("temp_avg")):
         d += cfg.weight_temp * abs(row_a["temp_avg"] - row_b["temp_avg"]) / 30.0
+    # Température ressentie (apparent) — poids 0.5x temp pour éviter redondance
+    if pd.notna(row_a.get("mean_apparent_temperature")) and pd.notna(row_b.get("mean_apparent_temperature")):
+        d += cfg.weight_temp * 0.5 * abs(row_a["mean_apparent_temperature"] - row_b["mean_apparent_temperature"]) / 30.0
+    # Pluie totale
     if pd.notna(row_a.get("precip_total")) and pd.notna(row_b.get("precip_total")):
         d += cfg.weight_rain * abs(row_a["precip_total"] - row_b["precip_total"]) / 20.0
+    # Pic de pluie sur 3h — plus discriminant que le total journalier
+    if pd.notna(row_a.get("precip_3h_max")) and pd.notna(row_b.get("precip_3h_max")):
+        d += cfg.weight_rain * 0.8 * abs(row_a["precip_3h_max"] - row_b["precip_3h_max"]) / 10.0
+    # Jour de semaine
     if row_a.get("day_of_week") != row_b.get("day_of_week"):
         d += cfg.weight_dow
+    # Jours fériés
     if row_a.get("is_holiday") != row_b.get("is_holiday"):
         d += cfg.weight_holiday
     if row_a.get("is_school_holiday") != row_b.get("is_school_holiday"):
         d += cfg.weight_holiday * 0.5
+    # Saison
     if row_a.get("season") != row_b.get("season"):
         d += cfg.weight_season
     return d
