@@ -1,111 +1,106 @@
 # pasdevelib-bot
 
-Bot de collecte et de prédiction pour [PasDeVélib.fr](https://pasdevelib.fr).
+[![Licence](https://img.shields.io/badge/licence-PolyForm%20Noncommercial-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Scrape](https://github.com/pasdevelib/pasdevelib-bot/actions/workflows/scrape.yml/badge.svg)](https://github.com/pasdevelib/pasdevelib-bot/actions/workflows/scrape.yml)
+[![Site](https://img.shields.io/badge/site-pasdevelib.fr-6C4CF1)](https://pasdevelib.fr)
 
-Récupère toutes les 5 minutes l'état des ~1500 stations Vélib' Métropole via l'API GBFS publique, archive l'historique sur GitHub Releases (zéro infra), enrichit avec la météo Open-Meteo, et publie une table de prédiction utilisée par le front Next.js.
+Bot de collecte et de prédiction pour [PasDeVélib.fr](https://pasdevelib.fr) — une app citoyenne qui prédit la disponibilité des ~1 500 stations Vélib' Métropole à Paris.
+
+Zéro serveur, zéro base de données. Tout passe par GitHub Actions et GitHub Releases.
 
 ## Architecture
 
 ```
-   Vélib' GBFS API ──┐
-                     ├──> pasdevelib-bot ──> GitHub Releases ──> pasdevelib-webapp
-   Open-Meteo API ───┘                       (parquet files)        (Next.js)
+Vélib' GBFS API ──┐
+                  ├──> pasdevelib-bot ──> GitHub Releases ──> pasdevelib-webapp
+Open-Meteo API ───┘                       (parquet files)       (Next.js, Vercel)
 ```
-
-Pas de base de données, pas de serveur. Tout passe par des assets de GitHub Releases téléchargés au build du front (ou lus à la volée via API GitHub).
 
 ## Stockage
 
-Trois releases servent de "buckets":
+Les données sont stockées dans trois releases GitHub utilisées comme buckets :
 
-| Release tag       | Contenu                                          | Mise à jour       |
-|-------------------|--------------------------------------------------|-------------------|
-| `live`            | `current_day.parquet`, `stations.json`           | Toutes les 5 min  |
-| `history`         | `YYYY-MM-DD.parquet` par jour archivé            | 1x/jour à 03:00   |
-| `aggregates`      | `medians.parquet`, `weather.parquet`             | 1x/semaine        |
+| Release tag  | Contenu                                        | Fréquence         |
+|--------------|------------------------------------------------|-------------------|
+| `live`       | `current_day.parquet`, `stations.json`         | Toutes les 5 min  |
+| `history`    | `YYYY-MM-DD.parquet` par jour                  | 1x/jour à 3h      |
+| `aggregates` | `medians.parquet`, `analog_index.parquet`, ... | 1x/semaine        |
+| `backup-*`   | Snapshot quotidien complet                     | 1x/jour à 3h      |
 
 ## Modèle prédictif
 
-Méthode des **journées analogues** (k-NN temporel), comme les forecasts retail.
+Méthode des **journées analogues** (k-NN temporel).
 
-Pour prédire la station `X` à demain 19h:
+Pour prédire la station `X` à demain 19h :
 
 1. On récupère les conditions cibles : jour de semaine, mois, météo prévue (Open-Meteo Forecast)
-2. On cherche dans l'historique les K=20 jours les plus similaires sur:
-   - Même jour de semaine
-   - Fenêtre saisonnière ±15 jours
-   - Température ±3°C, pluie oui/non, vent ±5 km/h
+2. On cherche dans l'historique les K jours les plus similaires sur :
+   - Jour de semaine, fenêtre saisonnière
+   - Température, pluie, vent
    - Statut calendaire (vacances, jour férié)
-3. Sur ces 20 voisins à 19h, on calcule:
-   - `proba_velib` = % de voisins avec `num_bikes >= 1`
-   - `proba_place` = % de voisins avec `num_docks_available >= 1`
-   - Bande p25-p75 du remplissage pour le graphe
+3. Sur ces voisins analogues, on calcule :
+   - `proba_velib` = % de voisins avec au moins un vélo
+   - `proba_place` = % de voisins avec au moins une place
+   - Quantiles p25/p50/p75 du taux de remplissage
 
 Implémenté dans `pasdevelib/predict.py`.
 
 ## Itinéraire vélo A → B
 
-Module `pasdevelib/routing.py`. Trouve les meilleurs trajets Vélib' entre deux points en combinant:
-
-1. Pré-filtrage Haversine des stations dans un rayon de marche (par défaut 600 m)
-2. Filtre disponibilité : `proba_velib >= 0.5` au départ, `proba_place >= 0.5` à l'arrivée
-3. Raffinement OpenRouteService : matrice de distances piétonnes réelles
-4. Scoring `confiance / durée totale` puis tri
-5. Génération de **deeplinks** Apple Plans (`maps.apple.com`) et Google Maps pour chaque segment (marche → vélo → marche)
-
-Deux modes :
-
-- **`TripMode.NOW`** : utilise les disponibilités live GBFS
-- **`TripMode.LATER`** : utilise les prédictions du modèle analogue à l'heure cible
+Module `pasdevelib/routing.py`. Combine disponibilité live ou prédite, pré-filtrage géographique et deeplinks Apple Plans / Google Maps.
 
 ```python
 from pasdevelib.routing import Coord, plan_trip, TripMode
 
 plans = plan_trip(
-    origin=Coord(48.8580, 2.3475),         # Châtelet
-    destination=Coord(48.8531, 2.3692),    # Bastille
+    origin=Coord(48.8580, 2.3475),       # Châtelet
+    destination=Coord(48.8531, 2.3692),  # Bastille
     stations=stations_json,
-    departure_states=live_or_predicted_states,
+    departure_states=live_or_predicted,
     mode=TripMode.NOW,
-    n_results=3,
-    min_proba=0.5,
 )
 ```
 
-Variable d'env requise pour le raffinement ORS : `ORS_API_KEY` (gratuit, [openrouteservice.org](https://openrouteservice.org/dev/#/signup), 500 matrices/jour). Si absente, fallback automatique sur Haversine.
+Variable d'env optionnelle : `ORS_API_KEY` ([openrouteservice.org](https://openrouteservice.org/dev/#/signup), 500 matrices/jour). Sinon, fallback Haversine.
 
 ## Workflows GitHub Actions
 
-| Workflow         | Trigger                  | Rôle                                       |
-|------------------|--------------------------|--------------------------------------------|
-| `scrape.yml`     | `*/5 * * * *`            | Fetch GBFS + append au parquet du jour     |
-| `consolidate.yml`| `0 3 * * *`              | Archive le jour précédent dans `history`   |
-| `weather.yml`    | `0 5 * * *`              | Append météo de la veille (Open-Meteo)     |
-| `aggregate.yml`  | `0 4 * * 1`              | Reconstruit les tables de prédiction       |
-| `bootstrap.yml`  | `workflow_dispatch`      | Import one-shot du dump lovasoa            |
+| Workflow         | Déclencheur             | Rôle                                    |
+|------------------|-------------------------|-----------------------------------------|
+| `scrape.yml`     | `*/5 * * * *`           | Fetch GBFS + append au parquet du jour  |
+| `consolidate.yml`| `0 3 * * *`             | Archive le jour dans `history`          |
+| `backup.yml`     | `0 3 * * *`             | Snapshot quotidien complet              |
+| `aggregate.yml`  | `0 4 * * 1`             | Reconstruit les tables de prédiction    |
+| `forecast.yml`   | `0 4 * * *`             | Calcule les prévisions J+7              |
+| `eval-daily.yml` | `30 3 * * *`            | Métriques de précision quotidiennes     |
+| `bootstrap.yml`  | `workflow_dispatch`     | Import one-shot de l'historique initial |
 
-## Setup initial
+## Installation
 
 ```bash
-# 1. Clone + install
 git clone https://github.com/pasdevelib/pasdevelib-bot
 cd pasdevelib-bot
 pip install -e .
-
-# 2. Bootstrap historique (one-shot, ~10 min)
-gh workflow run bootstrap.yml
-
-# 3. Vérifier que le scrape tourne
-gh run list --workflow=scrape.yml
 ```
+
+Variables d'environnement requises dans GitHub Actions : `GITHUB_TOKEN` (automatique).
 
 ## Sources de données
 
-- **Vélib' GBFS**: `https://velib-metropole-opendata.smoove.pro/opendata/Velib_Metropole/`
-- **Historique d'amorçage**: [`lovasoa/historique-velib-opendata`](https://github.com/lovasoa/historique-velib-opendata)
-- **Météo**: [Open-Meteo Archive API](https://open-meteo.com/en/docs/historical-weather-api) + [Forecast API](https://open-meteo.com/en/docs)
-- **Calendrier**: [`etalab/jours-feries-france`](https://github.com/etalab/jours-feries-france) + vacances scolaires data.gouv
+- **Vélib' GBFS** : `https://velib-metropole-opendata.smoove.pro/opendata/Velib_Metropole/` — [ODbL](https://opendatacommons.org/licenses/odbl/)
+- **Historique d'amorçage** : [`lovasoa/historique-velib-opendata`](https://github.com/lovasoa/historique-velib-opendata)
+- **Météo** : [Open-Meteo](https://open-meteo.com/) — licence CC BY 4.0
+- **Calendrier** : [`etalab/jours-feries-france`](https://github.com/etalab/jours-feries-france) + vacances data.gouv.fr
+
+## Signaler un problème
+
+Ouvrez une [issue GitHub](https://github.com/pasdevelib/pasdevelib-bot/issues) pour tout bug ou question technique relative au bot.
+
+Pour les retours sur l'app, rendez-vous sur [pasdevelib.fr/contributions](https://pasdevelib.fr/contributions).
 
 ## Licence
 
-AGPL-3.0 (cohérence avec l'écosystème civic tech).
+Le code source de ce bot est publié sous licence **PolyForm Noncommercial 1.0.0** — utilisation libre à des fins non commerciales. Voir [LICENSE](LICENSE).
+
+Les données Vélib' Métropole utilisées sont publiées sous licence **ODbL** par Vélib' Métropole. PasDeVélib n'est pas affilié à Vélib' Métropole ni à Smovengo.
