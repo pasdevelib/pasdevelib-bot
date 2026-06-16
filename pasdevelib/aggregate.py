@@ -105,13 +105,25 @@ def build_analog_index(
     # Agrégation météo par jour
     w = weather_df.copy()
     w["date"] = w["ts"].dt.tz_convert("Europe/Paris").dt.date
-    daily_weather = w.groupby("date").agg(
+    # Pluie cumulée sur fenêtres glissantes (features météo fines)
+    w_sorted = w.sort_values(["date", "ts"])
+
+    def precip_3h(grp: "pd.DataFrame") -> "pd.Series":
+        return grp["precipitation"].rolling(3, min_periods=1).sum()
+
+    w_sorted["precip_3h"] = w_sorted.groupby("date", group_keys=False).apply(precip_3h)
+    w_sorted["precip_3h_max"] = w_sorted["precip_3h"]  # max sur la journée calculé après
+
+    daily_weather = w_sorted.groupby("date").agg(
         mean_temperature=("temperature_2m", "mean"),
         max_temperature=("temperature_2m", "max"),
+        mean_apparent_temperature=("apparent_temperature", "mean"),
         total_precipitation=("precipitation", "sum"),
+        precip_3h_max=("precip_3h", "max"),   # pic de pluie sur 3h dans la journée
         mean_wind=("wind_speed_10m", "mean"),
     ).reset_index()
     daily_weather["has_rain"] = daily_weather["total_precipitation"] > 1.0
+    daily_weather["has_heavy_rain"] = daily_weather["precip_3h_max"] > 5.0  # >5mm/3h = forte pluie
 
     merged = daily_weather.merge(calendar_df, on="date", how="inner")
     return merged
