@@ -48,9 +48,17 @@ def _build_target_features(target_dates: list[dt.date]) -> pd.DataFrame:
 
     weather_hourly = weather.fetch_forecast(days=n_days)
     weather_hourly["date"] = pd.to_datetime(weather_hourly["ts"]).dt.tz_convert("Europe/Paris").dt.date.astype(str)
-    weather_daily = weather_hourly.groupby("date", as_index=False).agg(
+    # Pluie cumulée sur 3h (même logique que aggregate.py)
+    weather_hourly_sorted = weather_hourly.sort_values(["date", "ts"])
+    weather_hourly_sorted["precip_3h"] = (
+        weather_hourly_sorted.groupby("date", group_keys=False)["precipitation"]
+        .apply(lambda s: s.rolling(3, min_periods=1).sum())
+    )
+    weather_daily = weather_hourly_sorted.groupby("date", as_index=False).agg(
         temp_avg=("temperature_2m", "mean"),
+        mean_apparent_temperature=("apparent_temperature", "mean"),
         precip_total=("precipitation", "sum"),
+        precip_3h_max=("precip_3h", "max"),
     )
 
     start = min(target_dates)
