@@ -118,6 +118,25 @@ def _row_distance(row_a: pd.Series, row_b: pd.Series, cfg: AnalogConfig) -> floa
 
 # ── Matching ───────────────────────────────────────────────────────────────────
 
+def _adaptive_k(distances: "pd.Series", cfg: AnalogConfig) -> int:
+    """k adaptatif : on prend au moins cfg.k voisins mais on peut en prendre plus
+    si les suivants sont proches en distance (qualité similaire).
+    On s'arrête dès que le gap de distance dépasse 20% du premier voisin.
+    """
+    sorted_dists = distances.sort_values().values
+    k_base = min(cfg.k, len(sorted_dists))
+    if k_base <= 2:
+        return k_base
+    d0 = sorted_dists[0] + 1e-6  # éviter division par zéro
+    k = k_base
+    for i in range(k_base, min(len(sorted_dists), cfg.k * 2)):
+        gap = (sorted_dists[i] - sorted_dists[i - 1]) / d0
+        if gap > 0.20:
+            break
+        k = i + 1
+    return k
+
+
 def find_analog_days(
     target_features: pd.Series,
     candidates: pd.DataFrame,
@@ -139,9 +158,11 @@ def find_analog_days(
         distances = candidates.apply(lambda r: _row_distance(target_features, r, cur_cfg), axis=1)
         if len(distances) == 0:
             continue
-        sorted_idx = distances.sort_values().index[: cur_cfg.k]
+        # k adaptatif : ajuste selon la qualité des matchs
+        k_adaptive = _adaptive_k(distances, cur_cfg)
+        sorted_idx = distances.sort_values().index[:k_adaptive]
         if len(sorted_idx) >= 2:
-            return list(candidates.loc[sorted_idx, "date"]), label
+            return list(candidates.loc[sorted_idx, "date"]), f"{label} (k={k_adaptive})"
     return list(candidates["date"].head(min(20, len(candidates)))), "L5 fallback"
 
 
