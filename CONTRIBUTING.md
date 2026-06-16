@@ -16,7 +16,7 @@ Ouvrez une issue avant d'ouvrir une pull request. Les grandes évolutions sont d
 
 ## Pour les retours sur l'app (pas le code)
 
-Rendez-vous sur [pasdevelib.fr/contributions](https://pasdevelib.fr/contributions) — c'est fait pour ça.
+Rendez-vous sur [pasdevelib.fr/contributions](https://pasdevelib.fr/contributions).
 
 ## Licence des contributions
 
