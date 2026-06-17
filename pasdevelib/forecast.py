@@ -106,6 +106,26 @@ def run() -> None:
     }
     print(f"[forecast] {len(capacities)} station capacities loaded")
 
+    # Coordonnées GPS pour le spatial layer
+    import pandas as pd as _pd  # éviter conflit de nom
+    stations_coords = pd.DataFrame([{
+        "station_id": str(s.get("station_id") or s.get("stationcode") or s.get("stationCode")),
+        "lat": float(s.get("lat", 0) or 0),
+        "lon": float(s.get("lon", 0) or 0),
+    } for s in stations_raw])
+    stations_coords = stations_coords[
+        stations_coords["lat"].between(48.7, 49.1) &
+        stations_coords["lon"].between(2.1, 2.6)
+    ]
+
+    # Profils de station
+    try:
+        station_profiles = _download_parquet(storage.RELEASE_AGGREGATES, "station_profiles.parquet")
+        print(f"[forecast] {len(station_profiles)} station profiles loaded")
+    except Exception:
+        station_profiles = None
+        print("[forecast] station_profiles.parquet not found, skipping")
+
     print("[forecast] building 7-day target features...")
     targets = _build_target_features(target_dates)
     print(f"[forecast] {len(targets)} target days")
@@ -119,6 +139,8 @@ def run() -> None:
             target_features=target,
             calendar_df=calendar_existing,
             hourly_history=hourly,
+            stations_coords=stations_coords,
+            station_profiles=station_profiles,
         )
         if not pred.empty:
             all_predictions.append(pred)
