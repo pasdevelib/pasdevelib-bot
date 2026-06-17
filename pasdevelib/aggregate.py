@@ -126,6 +126,15 @@ def build_analog_index(
     daily_weather["has_heavy_rain"] = daily_weather["precip_3h_max"] > 5.0  # >5mm/3h = forte pluie
 
     merged = daily_weather.merge(calendar_df, on="date", how="inner")
+
+    # Assurer que is_disruption_day et is_greve existent même si calendar_feats est ancien
+    if "is_disruption_day" not in merged.columns:
+        merged["is_disruption_day"] = False
+    if "is_greve" not in merged.columns:
+        merged["is_greve"] = False
+    if "is_event" not in merged.columns:
+        merged["is_event"] = False
+
     return merged
 
 
@@ -178,6 +187,14 @@ def run() -> None:
         analog.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[aggregate] analog_index.parquet : {len(analog):,} rows")
+
+        # 4. Profils de station (bureau / résidentiel / touristique / mixte)
+        from pasdevelib.predict import compute_station_profiles
+        profiles = compute_station_profiles(hourly)
+        out = tmp_dir / "station_profiles.parquet"
+        profiles.to_parquet(out, compression="snappy", index=False)
+        storage.upload_asset(storage.RELEASE_AGGREGATES, out)
+        print(f"[aggregate] station_profiles.parquet : {len(profiles):,} rows")
 
 
 if __name__ == "__main__":
