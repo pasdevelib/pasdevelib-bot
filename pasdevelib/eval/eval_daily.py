@@ -191,6 +191,20 @@ def compute_metrics(
             "n_days":           n_days,
         }
 
+    # Métriques par type de station
+    by_type: dict = {}
+    if "station_type" in records[0] if records else False:
+        df_typed = pd.DataFrame(records)
+        for stype in df_typed["station_type"].dropna().unique():
+            sub = df_typed[df_typed["station_type"] == stype]
+            if len(sub) < 10:
+                continue
+            acc_t = float((sub["pred_bin"] == sub["has_velib"]).mean())
+            fpr_t = float(((sub["pred_bin"] == 1) & (sub["has_velib"] == 0)).sum() /
+                          max(1, (sub["has_velib"] == 0).sum()))
+            by_type[stype] = {"accuracy": round(acc_t, 4), "false_positive_rate": round(fpr_t, 4), "n": int(len(sub))}
+    if by_type:
+        binary["by_station_type"] = by_type
     return {"binary": binary, "count": count}
 
 
@@ -201,6 +215,15 @@ def main() -> None:
 
     print(f"[eval_daily] Chargement depuis {tag}...")
     hourly    = _dl_parquet(tag, "aggregates__hourly_history.parquet")
+    try:
+        profiles_df = _dl_parquet(storage.RELEASE_AGGREGATES, "station_profiles.parquet")
+        profiles_df["station_id"] = profiles_df["station_id"].astype(str)
+        hourly["station_id_str"] = hourly["station_id"].astype(str)
+        hourly = hourly.merge(profiles_df[["station_id", "station_type"]],
+                              left_on="station_id_str", right_on="station_id", how="left",
+                              suffixes=("", "_prof")).drop(columns=["station_id_str", "station_id_prof"], errors="ignore")
+    except Exception as e:
+        print(f"[eval] profiles not loaded: {e}")
     calendar  = _dl_parquet(tag, "aggregates__calendar.parquet")
     analog_idx = _dl_parquet(tag, "aggregates__analog_index.parquet")
 
