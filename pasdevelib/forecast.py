@@ -107,7 +107,6 @@ def run() -> None:
     print(f"[forecast] {len(capacities)} station capacities loaded")
 
     # Coordonnées GPS pour le spatial layer
-    import pandas as pd as _pd  # éviter conflit de nom
     stations_coords = pd.DataFrame([{
         "station_id": str(s.get("station_id") or s.get("stationcode") or s.get("stationCode")),
         "lat": float(s.get("lat", 0) or 0),
