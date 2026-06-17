@@ -125,6 +125,30 @@ def run() -> None:
         station_profiles = None
         print("[forecast] station_profiles.parquet not found, skipping")
 
+    # Tendance réseau global — V4
+    try:
+        network_trend = _download_parquet(storage.RELEASE_AGGREGATES, "network_trend.parquet")
+        print(f"[forecast] network_trend.parquet loaded ({len(network_trend)} rows)")
+    except Exception:
+        network_trend = None
+        print("[forecast] network_trend.parquet not found, skipping")
+
+    # Graphe de flux — V4
+    try:
+        flux_graph = _download_parquet(storage.RELEASE_AGGREGATES, "flux_graph.parquet")
+        print(f"[forecast] flux_graph.parquet loaded ({len(flux_graph)} rows)")
+    except Exception:
+        flux_graph = None
+        print("[forecast] flux_graph.parquet not found, skipping")
+
+    # Stats d'anomalies — V4
+    try:
+        anomaly_stats = _download_parquet(storage.RELEASE_AGGREGATES, "anomaly_stats.parquet")
+        print(f"[forecast] anomaly_stats.parquet loaded ({len(anomaly_stats)} rows)")
+    except Exception:
+        anomaly_stats = None
+        print("[forecast] anomaly_stats.parquet not found, skipping")
+
     print("[forecast] building 7-day target features...")
     targets = _build_target_features(target_dates)
     print(f"[forecast] {len(targets)} target days")
@@ -140,6 +164,9 @@ def run() -> None:
             hourly_history=hourly,
             stations_coords=stations_coords,
             station_profiles=station_profiles,
+            flux_graph=flux_graph,
+            anomaly_stats=anomaly_stats,
+            network_trend=network_trend,
         )
         if not pred.empty:
             all_predictions.append(pred)
