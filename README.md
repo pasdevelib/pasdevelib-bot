@@ -3,9 +3,9 @@
 [![Licence](https://img.shields.io/badge/licence-PolyForm%20Noncommercial-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Scrape](https://github.com/pasdevelib/pasdevelib-bot/actions/workflows/scrape.yml/badge.svg)](https://github.com/pasdevelib/pasdevelib-bot/actions/workflows/scrape.yml)
-[![Site](https://img.shields.io/badge/site-pasdevelib.fr-6C4CF1)](https://pasdevelib.fr)
+[![Site](https://img.shields.io/badge/site-pasdevelib.app-6C4CF1)](https://pasdevelib.app)
 
-Bot de collecte et de prédiction pour [PasDeVélib.fr](https://pasdevelib.fr) — une app citoyenne qui prédit la disponibilité des ~1 500 stations Vélib' Métropole à Paris.
+Bot de collecte et de prédiction pour [PasDeVélib.fr](https://pasdevelib.app) — une app citoyenne qui prédit la disponibilité des ~1 500 stations Vélib' Métropole à Paris.
 
 Zéro serveur, zéro base de données. Tout passe par GitHub Actions et GitHub Releases.
 
@@ -97,7 +97,7 @@ Variables d'environnement requises dans GitHub Actions : `GITHUB_TOKEN` (automat
 
 Ouvrez une [issue GitHub](https://github.com/pasdevelib/pasdevelib-bot/issues) pour tout bug ou question technique relative au bot.
 
-Pour les retours sur l'app, rendez-vous sur [pasdevelib.fr/contributions](https://pasdevelib.fr/contributions).
+Pour les retours sur l'app, rendez-vous sur [pasdevelib.app/contributions](https://pasdevelib.app/contributions).
 
 ## Licence
 
