@@ -23,7 +23,7 @@ class AnalogConfig:
     weight_holiday: float = 4.0
     weight_season: float = 1.5
     weight_disruption: float = 5.0
-    weight_network: float = 1.5      # tendance réseau global dans la distance
+    weight_network: float = 0.0      # désactivé — trop peu de données 2026 (réactiver à 6+ mois)
     weight_station_type: float = 2.0  # profil bureau/résidentiel/touristique
     temporal_halflife_days: float = 365.0
     shrinkage_threshold: int = 3
@@ -33,7 +33,7 @@ class AnalogConfig:
     spatial_k: int = 5
     spatial_weight: float = 0.2
     # Spatial layer par flux (graphe de corrélation)
-    flux_weight: float = 0.1         # poids du lissage par corrélation de flux
+    flux_weight: float = 0.0         # désactivé — corrélations instables avec < 6 mois de données
     flux_top_k: int = 3              # top K voisines par corrélation
     # Anomalie
     anomaly_confidence_penalty: float = 0.15  # réduction de confiance si anomalie
