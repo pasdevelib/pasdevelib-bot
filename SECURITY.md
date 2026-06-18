@@ -2,7 +2,7 @@
 
 Si vous découvrez une vulnérabilité de sécurité dans ce projet, **n'ouvrez pas d'issue publique**.
 
-Utilisez le formulaire de contact sur [pasdevelib.fr/contributions](https://pasdevelib.fr/contributions) en sélectionnant le type "Bug".
+Utilisez le formulaire de contact sur [pasdevelib.app/contributions](https://pasdevelib.app/contributions) en sélectionnant le type "Bug".
 
 Nous nous engageons à répondre sous 72 heures et à corriger toute vulnérabilité confirmée dans les meilleurs délais.
 
@@ -15,4 +15,4 @@ Les données traitées sont des données publiques (API GBFS Vélib' Métropole,
 ## Ce qui n'est pas dans le périmètre
 
 - Vulnérabilités dans les dépendances tierces (signalez-les directement aux mainteneurs concernés)
-- Problèmes liés à l'application web : signalez-les sur [pasdevelib.fr/contributions](https://pasdevelib.fr/contributions)
+- Problèmes liés à l'application web : signalez-les sur [pasdevelib.app/contributions](https://pasdevelib.app/contributions)
