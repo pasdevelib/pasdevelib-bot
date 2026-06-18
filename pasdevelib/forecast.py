@@ -117,6 +117,35 @@ def run() -> None:
         stations_coords["lon"].between(2.1, 2.6)
     ]
 
+    # Paramètres Platt recalibrés depuis la dernière eval
+    try:
+        import json as _json
+        import datetime as _dt
+        yesterday = (_dt.date.today() - _dt.timedelta(days=1)).strftime("%Y%m%d")
+        platt_asset_path = tmp_dir / "metrics__accuracy.parquet"
+        # Lire depuis le backup
+        backup_tag = f"backup-{yesterday}"
+        acc_path = tmp_dir / "metrics__accuracy.json"
+        if storage.download_asset(backup_tag, "metrics__accuracy.json", acc_path):
+            with open(acc_path) as f:
+                acc = _json.load(f)
+            platt_params = acc.get("platt_params", {})
+            if platt_params:
+                print(f"[forecast] Platt params loaded: {list(platt_params.keys())}")
+                from pasdevelib.predict import AnalogConfig
+                # Mettre à jour AnalogConfig avec les paramètres recalibrés
+                for slot, (a, b) in platt_params.items():
+                    cfg_default = AnalogConfig()
+                    cfg_default.platt_by_slot[slot] = (float(a), float(b))
+                predict_cfg = cfg_default
+            else:
+                predict_cfg = None
+        else:
+            predict_cfg = None
+    except Exception as e:
+        predict_cfg = None
+        print(f"[forecast] Platt params not loaded: {e}")
+
     # Profils de station
     try:
         station_profiles = _download_parquet(storage.RELEASE_AGGREGATES, "station_profiles.parquet")
@@ -167,6 +196,7 @@ def run() -> None:
             flux_graph=flux_graph,
             anomaly_stats=anomaly_stats,
             network_trend=network_trend,
+            cfg=predict_cfg,
         )
         if not pred.empty:
             all_predictions.append(pred)
