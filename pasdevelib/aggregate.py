@@ -72,6 +72,43 @@ def build_hourly_history(history: pd.DataFrame) -> pd.DataFrame:
     return grouped
 
 
+def build_dead_stations(hourly_history: pd.DataFrame, days_threshold: int = 2) -> pd.DataFrame:
+    """Détecte les stations sans mouvement depuis days_threshold jours.
+
+    Une station est "morte" si son fill_rate n'a pas changé de plus de 0.05
+    sur les dernières 48h — probablement en maintenance ou hors service.
+
+    Sortie : station_id, last_active_date, days_inactive, mean_fill_rate
+    """
+    df = hourly_history.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    if df.empty:
+        return pd.DataFrame(columns=["station_id", "last_active_date", "days_inactive", "mean_fill_rate"])
+
+    max_date = df["date"].max()
+    cutoff = max_date - pd.Timedelta(days=days_threshold)
+
+    recent = df[df["date"] >= cutoff]
+    dead = []
+
+    for station_id, grp in recent.groupby("station_id"):
+        std = grp["fill_rate"].std()
+        mean = grp["fill_rate"].mean()
+        # Mort si variance très faible ET remplissage fixe (pas de mouvement)
+        if std < 0.03:
+            last_active = df[df["station_id"] == station_id]["date"].max()
+            days_inactive = (max_date - last_active).days
+            dead.append({
+                "station_id": str(station_id),
+                "last_active_date": str(last_active.date()),
+                "days_inactive": days_inactive,
+                "mean_fill_rate": round(float(mean), 3),
+            })
+
+    return pd.DataFrame(dead)
+
+
 def build_network_trend(hourly_history: pd.DataFrame) -> pd.DataFrame:
     """Tendance réseau global : % stations avec vélos par (weekday, hour).
 
@@ -285,6 +322,13 @@ def run() -> None:
         profiles.to_parquet(out, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, out)
         print(f"[aggregate] station_profiles.parquet : {len(profiles):,} rows")
+
+        # 9. Détection stations mortes (pas de changement depuis 48h)
+        dead_stations = build_dead_stations(hourly)
+        out = tmp_dir / "dead_stations.parquet"
+        dead_stations.to_parquet(out, compression="snappy", index=False)
+        storage.upload_asset(storage.RELEASE_AGGREGATES, out)
+        print(f"[aggregate] dead_stations.parquet : {len(dead_stations):,} stations mortes")
 
 
 if __name__ == "__main__":
