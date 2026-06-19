@@ -64,9 +64,18 @@ def build_hourly_history(history: pd.DataFrame) -> pd.DataFrame:
     df["fill_rate"] = df["num_bikes_available"] / df["capacity"]
     df["has_velib"] = (df["num_bikes_available"] >= 1).astype(int)
     df["has_place"] = (df["num_docks_available"] >= 1).astype(int)
+    df["fill_rate_ebike"] = df["num_bikes_ebike"] / df["capacity"].clip(lower=1)
+    df["fill_rate_mechanical"] = df["num_bikes_mechanical"] / df["capacity"].clip(lower=1)
+    df["has_ebike"] = (df["num_bikes_ebike"] >= 1).astype(int)
+    df["has_mechanical"] = (df["num_bikes_mechanical"] >= 1).astype(int)
+
     grouped = df.groupby(["station_id", "date", "hour"]).agg(
         fill_rate=("fill_rate", "median"),
+        fill_rate_ebike=("fill_rate_ebike", "median"),
+        fill_rate_mechanical=("fill_rate_mechanical", "median"),
         has_velib=("has_velib", "max"),
+        has_ebike=("has_ebike", "max"),
+        has_mechanical=("has_mechanical", "max"),
         has_place=("has_place", "max"),
     ).reset_index()
     return grouped
