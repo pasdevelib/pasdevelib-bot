@@ -2,33 +2,69 @@ name: scrape
 
 on:
   schedule:
-    - cron: '* * * * *'
+    # 3 instances parallèles toutes les 5 min avec offset
+    # Instance A : 0, 5, 10, 15... min
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
-# Empêche deux scrapes de tourner en même temps
-concurrency:
-  group: scrape
-  cancel-in-progress: false
+# Pas de concurrency lock — on veut des instances parallèles
+# Chaque instance gère son propre verrou via le timestamp
 
 permissions:
   contents: write
 
 jobs:
-  scrape:
+  scrape-a:
+    name: Scrape A (immediate)
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-
       - name: Install
         run: pip install -e .
-
-      - name: Run scrape
+      - name: Scrape loop (4 min)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m pasdevelib.scrape
+        run: python -m pasdevelib.scrape_loop --duration 240 --interval 30
+
+  scrape-b:
+    name: Scrape B (offset 90s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install -e .
+      - name: Wait offset
+        run: sleep 90
+      - name: Scrape loop (2.5 min)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m pasdevelib.scrape_loop --duration 150 --interval 30
+
+  scrape-c:
+    name: Scrape C (offset 3 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install -e .
+      - name: Wait offset
+        run: sleep 180
+      - name: Scrape loop (1 min)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m pasdevelib.scrape_loop --duration 60 --interval 30
