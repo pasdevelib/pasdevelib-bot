@@ -39,6 +39,9 @@ def run(city_ids: list[str] | None = None) -> None:
     for city_id, n in by_city.items():
         print(f"  {city_id}: {n} stations")
 
+    # Créer la release si elle n'existe pas
+    storage.ensure_release(RELEASE_CITIES, 'Cities Live Data — Bordeaux, Lyon, Toulouse')
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
 
