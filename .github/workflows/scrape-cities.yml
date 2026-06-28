@@ -8,7 +8,7 @@ on:
       cities:
         description: 'Villes à scraper (ex: bordeaux lyon)'
         required: false
-        default: 'bordeaux lyon'
+        default: 'bordeaux lyon toulouse'
 
 permissions:
   contents: write
@@ -32,7 +32,7 @@ jobs:
       - name: Scrape Bordeaux + Lyon
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m pasdevelib.scrape_cities --cities bordeaux lyon
+        run: python -m pasdevelib.scrape_cities --cities bordeaux lyon toulouse
 
       - name: Scrape all (offset 2min)
         run: sleep 120
@@ -41,5 +41,5 @@ jobs:
       - name: Second scrape
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m pasdevelib.scrape_cities --cities bordeaux lyon
+        run: python -m pasdevelib.scrape_cities --cities bordeaux lyon toulouse
         continue-on-error: true
