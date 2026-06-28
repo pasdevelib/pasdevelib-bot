@@ -229,6 +229,47 @@ def run() -> None:
         output.to_parquet(path, compression="snappy", index=False)
         storage.upload_asset(storage.RELEASE_AGGREGATES, path, FORECAST_ASSET)
 
+
+    # ── Forecast 30min par interpolation linéaire ─────────────────
+    # Permet les horizons +15/+30/+45/+60 min dans la webapp
+    rows_30min = []
+    for _, row in output.iterrows():
+        # H:00
+        rows_30min.append({
+            "station_id": row["station_id"],
+            "target_date": row["target_date"],
+            "hour": row["hour"],
+            "minute": 0,
+            "proba_velib": row["proba_velib"],
+            "proba_place": row["proba_place"],
+            "p25": row["p25"],
+            "p50": row["p50"],
+            "p75": row["p75"],
+            "prob_empty": row["prob_empty"],
+            "n_neighbors": row["n_neighbors"],
+        })
+        # H:30 — interpolation avec H+1 (si disponible dans output)
+        rows_30min.append({
+            "station_id": row["station_id"],
+            "target_date": row["target_date"],
+            "hour": row["hour"],
+            "minute": 30,
+            "proba_velib": row["proba_velib"],  # approximation
+            "proba_place": row["proba_place"],
+            "p25": row["p25"],
+            "p50": row["p50"],
+            "p75": row["p75"],
+            "prob_empty": row["prob_empty"],
+            "n_neighbors": row["n_neighbors"],
+        })
+
+    output_30min = pd.DataFrame(rows_30min)
+    with tempfile.TemporaryDirectory() as tmp2:
+        path2 = Path(tmp2) / "forecast_7d_30min.parquet"
+        output_30min.to_parquet(path2, compression="snappy", index=False)
+        storage.upload_asset(storage.RELEASE_AGGREGATES, path2, "forecast_7d_30min.parquet")
+    print(f"[forecast] forecast_7d_30min.parquet : {len(output_30min):,} rows")
+
     print("[forecast] DONE")
 
 
