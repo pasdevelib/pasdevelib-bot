@@ -1,0 +1,28 @@
+name: init-cities-release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install -e . requests pandas pyarrow
+      - name: Init cities-live release and scrape
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Créer la release cities-live
+          gh release create cities-live --repo pasdevelib/pasdevelib-bot --title "Cities Live Data" --notes "Live data for Bordeaux, Lyon, Toulouse" 2>/dev/null || true
+          # Scraper les 3 villes
+          python -m pasdevelib.scrape_cities --cities bordeaux lyon toulouse
