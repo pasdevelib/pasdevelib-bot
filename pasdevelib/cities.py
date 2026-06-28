@@ -73,6 +73,21 @@ CITIES: dict[str, CityConfig] = {
         bbox=(45.7, 4.75, 45.85, 5.0),
         timezone="Europe/Paris",
     ),
+
+    # ── Toulouse — VélôToulouse (JCDecaux) ───────────────────────
+    "toulouse": CityConfig(
+        city_id="toulouse",
+        city_name="Toulouse",
+        country="FR",
+        operator="JCDecaux",
+        system_name="VélôToulouse",
+        gbfs_base="https://api.jcdecaux.com/vls/v3",
+        station_info_path="stations?contract=Toulouse&apiKey=demo",
+        station_status_path="stations?contract=Toulouse&apiKey=demo",
+        opendata_url="https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/tiseo-arrets-et-stations/records",
+        bbox=(43.55, 1.35, 43.65, 1.5),
+        timezone="Europe/Paris",
+    ),
 }
 
 
