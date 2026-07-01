@@ -1,0 +1,55 @@
+{
+  "bordeaux": [
+    {
+      "url": "https://transport.data.gouv.fr/gbfs/vcub-bordeaux-metropole/station_status.json",
+      "ok": false,
+      "err": "HTTP Error 500: Internal Server Error"
+    },
+    {
+      "url": "https://data.bordeaux-metropole.fr/gbfs/vcub/station_status.json",
+      "http": 200,
+      "ok": true,
+      "raw": "\n\n<!DOCTYPE html>\n<html lang=\"fr-FR\">\n    <head>\n    \n    \n\n    \n    \n\n\n\n\n\n\n\n   "
+    },
+    {
+      "url": "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=3",
+      "http": 200,
+      "n": 3,
+      "ok": true
+    },
+    {
+      "url": "https://api.jcdecaux.com/vls/v1/stations?contract=Bordeaux&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
+      "ok": false,
+      "err": "HTTP Error 403: Forbidden"
+    }
+  ],
+  "lyon": [
+    {
+      "url": "https://transport.data.gouv.fr/gbfs/velov/station_status.json",
+      "ok": false,
+      "err": "HTTP Error 500: Internal Server Error"
+    },
+    {
+      "url": "https://download.data.grandlyon.com/files/rdata/jcd_jcdecaux.jcdvelovsimple_2/gbfs/station_status.json",
+      "ok": false,
+      "err": "HTTP Error 401: Unauthorized"
+    },
+    {
+      "url": "https://api.jcdecaux.com/vls/v1/stations?contract=Lyon&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
+      "ok": false,
+      "err": "HTTP Error 403: Forbidden"
+    }
+  ],
+  "toulouse": [
+    {
+      "url": "https://transport.data.gouv.fr/gbfs/velo-toulouse/station_status.json",
+      "ok": false,
+      "err": "HTTP Error 500: Internal Server Error"
+    },
+    {
+      "url": "https://api.jcdecaux.com/vls/v1/stations?contract=Toulouse&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
+      "ok": false,
+      "err": "HTTP Error 403: Forbidden"
+    }
+  ]
+}
