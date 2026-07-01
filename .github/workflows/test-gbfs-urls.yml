@@ -12,26 +12,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test GBFS URLs
+      - name: Test more GBFS URLs
         run: |
           python3 << 'PYEOF'
           import urllib.request, json
 
           URLS = {
-            "bordeaux": [
-              "https://transport.data.gouv.fr/gbfs/vcub-bordeaux-metropole/station_status.json",
-              "https://data.bordeaux-metropole.fr/gbfs/vcub/station_status.json",
-              "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=3",
-              "https://api.jcdecaux.com/vls/v1/stations?contract=Bordeaux&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
+            "bordeaux_working": [
+              "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=5",
+              "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/records?limit=5",
             ],
             "lyon": [
-              "https://transport.data.gouv.fr/gbfs/velov/station_status.json",
-              "https://download.data.grandlyon.com/files/rdata/jcd_jcdecaux.jcdvelovsimple_2/gbfs/station_status.json",
-              "https://api.jcdecaux.com/vls/v1/stations?contract=Lyon&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
+              "https://opendata.grandlyon.com/fr/datapusher/ws/grandlyon/pvo_patrimoine_voirie.pvostationvelov/all.json?maxfeatures=5",
+              "https://download.data.grandlyon.com/wfs/rdata?SERVICE=WFS&VERSION=2.0.0&request=GetFeature&typename=jcd_jcdecaux.jcdvelovsimple&outputFormat=application/json&count=5",
+              "https://api.opendatasoft.com/api/explore/v2.1/catalog/datasets/lyon-en-selle-velos-velov/records?limit=5",
+              "https://data.grandlyon.com/portail/fr/datapusher/ws/grandlyon/pvo_patrimoine_voirie.pvostationvelov2/all.json?maxfeatures=5",
             ],
             "toulouse": [
-              "https://transport.data.gouv.fr/gbfs/velo-toulouse/station_status.json",
-              "https://api.jcdecaux.com/vls/v1/stations?contract=Toulouse&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
+              "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/relais-velo-malin/exports/json?limit=5",
+              "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/velo-station-velo-en-libre-service/records?limit=5",
+              "https://opendata.arcgis.com/datasets/b5a95e1e2b714e03a6b7c6a4c1c6d3b6_0.geojson",
             ],
           }
 
@@ -47,20 +47,28 @@ jobs:
                     parsed = json.loads(data)
                     if isinstance(parsed, list):
                       n = len(parsed)
+                      sample = str(parsed[0])[:150] if parsed else ""
+                    elif "results" in parsed:
+                      n = len(parsed["results"])
+                      sample = str(parsed["results"][0])[:150] if parsed["results"] else ""
+                    elif "features" in parsed:
+                      n = len(parsed["features"])
+                      sample = str(parsed["features"][0])[:150] if parsed["features"] else ""
                     else:
-                      n = len(parsed.get("data", {}).get("stations", []))
-                    results[city].append({"url": url, "http": r.status, "n": n, "ok": True})
+                      n = -1
+                      sample = str(parsed)[:150]
+                    results[city].append({"url": url, "http": r.status, "n": n, "ok": True, "sample": sample})
                     print(f"OK {r.status} n={n}: {url}")
-                  except:
-                    results[city].append({"url": url, "http": r.status, "ok": True, "raw": data[:80]})
-                    print(f"OK {r.status} (non-json): {url}")
+                    print(f"  sample: {sample[:100]}")
+                  except Exception as e2:
+                    results[city].append({"url": url, "http": r.status, "ok": "maybe", "raw": data[:100]})
+                    print(f"OK {r.status} parse_err={e2}: {url}")
               except Exception as e:
                 results[city].append({"url": url, "ok": False, "err": str(e)[:80]})
                 print(f"FAIL: {str(e)[:60]}: {url}")
 
           with open("gbfs_results.json", "w") as f:
-            json.dump(results, f, indent=2)
-          print("Done")
+            json.dump(results, f, indent=2, ensure_ascii=False)
           PYEOF
 
       - name: Commit results
@@ -68,5 +76,5 @@ jobs:
           git config user.email "bot@pasdevelib.app"
           git config user.name "pasdevelib-bot"
           git add gbfs_results.json
-          git commit -m "test: GBFS URL test results" || true
+          git commit -m "test: more GBFS URL results" || true
           git push
