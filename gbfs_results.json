@@ -1,38 +1,28 @@
 {
-  "bx_explore": {
-    "ok": true,
-    "n": 3,
-    "sample": "{'geo_point_2d': {'lon': -0.58437, 'lat': 44.83803}, 'geo_shape': {'type': 'Feature', 'geometry': {'coordinates': [-0.58437, 44.83803], 'type': 'Point'}, 'properties': {}}, 'insee': '33063', 'commune'",
-    "http": 200
-  },
-  "ly_ws": {
-    "ok": true,
-    "n": -1,
-    "sample": "{'fields': ['number', 'name', 'address', 'address2', 'address_jcd', 'commune', 'nmarrond', 'bonus', 'pole', 'bike_stands', 'available_bike_stands', 'available_bikes', 'availabilitycode', 'availability",
-    "http": 200
-  },
-  "ly_ogc": {
-    "ok": true,
-    "n": 3,
-    "sample": "{'type': 'Feature', 'id': 'jcd_jcdecaux.jcdvelov.1', 'geometry': {'type': 'Point', 'coordinates': [4.815747, 45.743317]}, 'properties': {'number': 2010, 'name': '2010 - CONFLUENCE / DARSE', 'address':",
-    "http": 200
-  },
-  "ly_wfs": {
-    "ok": true,
-    "n": 3,
-    "sample": "{'type': 'Feature', 'id': 'jcd_jcdecaux.jcdvelov.1', 'geometry': {'type': 'Point', 'coordinates': [4.815747, 45.743317]}, 'properties': {'number': 2010, 'name': '2010 - CONFLUENCE / DARSE', 'address':",
-    "http": 200
-  },
-  "tls_1": {
+  "tls_velo_malin": {
     "ok": false,
     "err": "HTTP Error 404: Not Found"
   },
-  "tls_2": {
+  "tls_catalog": {
+    "ok": true,
+    "n": 10,
+    "s": "{'visibility': 'domain', 'fields': [{'name': 'exercice', 'description': None, 'annotations': {}, 'label': 'Exercice', 'type': 'double'}, {'name': 'entite_financiere', 'description': None, 'annotations",
+    "http": 200
+  },
+  "tls_gbfs": {
+    "ok": false,
+    "err": "HTTP Error 500: Internal Server Error"
+  },
+  "tls_gbfs_info": {
+    "ok": false,
+    "err": "HTTP Error 500: Internal Server Error"
+  },
+  "tls_tiseo": {
     "ok": false,
     "err": "HTTP Error 404: Not Found"
   },
-  "tls_3": {
+  "tls_jcd": {
     "ok": false,
-    "err": "HTTP Error 404: Not Found"
+    "err": "HTTP Error 403: Forbidden"
   }
 }
