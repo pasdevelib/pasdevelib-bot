@@ -1,0 +1,34 @@
+name: test-gbfs-urls
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test all GBFS URLs
+        run: |
+          echo "=== BORDEAUX ==="
+          curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" \
+            "https://transport.data.gouv.fr/gbfs/vcub-bordeaux-metropole/station_status.json" || true
+          curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" \
+            "https://data.bordeaux-metropole.fr/gbfs/vcub/station_status.json" || true
+          curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" \
+            "https://gbfs.urbansharing.com/bordeaux-metropole.vcub.fr/station_status.json" || true
+          curl -s "https://transport.data.gouv.fr/gbfs/vcub-bordeaux-metropole/gbfs.json" | head -c 200 || true
+
+          echo "=== LYON ==="
+          curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" \
+            "https://transport.data.gouv.fr/gbfs/velov/station_status.json" || true
+          curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" \
+            "https://download.data.grandlyon.com/files/rdata/jcd_jcdecaux.jcdvelovsimple_2/gbfs/station_status.json" || true
+          curl -s "https://transport.data.gouv.fr/gbfs/velov/gbfs.json" | head -c 200 || true
+
+          echo "=== TOULOUSE ==="
+          curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" \
+            "https://transport.data.gouv.fr/gbfs/velo-toulouse/station_status.json" || true
+          curl -s "https://transport.data.gouv.fr/gbfs/velo-toulouse/gbfs.json" | head -c 200 || true
+
+          echo "=== CATALOG ==="
+          curl -s "https://transport.data.gouv.fr/api/v1/datasets?type=bike-sharing" | python3 -c "import sys,json; d=json.load(sys.stdin); print([x.get('slug') for x in d[:5]])" || true
