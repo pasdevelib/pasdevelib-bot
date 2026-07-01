@@ -11,48 +11,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Find Toulouse velo datasets
+      - name: Test Toulouse cyclocity
         run: |
           python3 << 'PYEOF'
           import urllib.request, json
 
-          # D'abord chercher les datasets vélo dans le catalog
-          url = "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets?q=velo&limit=20"
-          req = urllib.request.Request(url, headers={"Accept":"application/json","User-Agent":"pasdevelib/1.0"})
-          with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read())
-          datasets = data.get("results",[]) or data.get("datasets",[])
-          print("Toulouse datasets:")
-          for d in datasets:
-            did = d.get("dataset_id") or d.get("datasetid") or d.get("id","?")
-            print(f"  {did}")
-
-          # Tester les IDs plausibles
           URLS = [
-            ("tls_velomalin", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/velo-malin-stations/exports/json?limit=3"),
-            ("tls_velov_tls", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/velotoulouse-stations/exports/json?limit=3"),
-            ("tls_bicycle", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/bicyclette/exports/json?limit=3"),
+            ("tls_cyclocity_gbfs", "https://api.cyclocity.fr/contracts/toulouse/gbfs/gbfs.json"),
+            ("tls_cyclocity_info", "https://api.cyclocity.fr/contracts/toulouse/gbfs/station_information.json"),
+            ("tls_cyclocity_status", "https://api.cyclocity.fr/contracts/toulouse/gbfs/station_status.json"),
+            ("tls_opendata_gbfs", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/velotoulouse-vls-gbfs/exports/json?limit=5"),
           ]
+
           results = {}
           for name, url in URLS:
             try:
               req = urllib.request.Request(url, headers={"Accept":"application/json","User-Agent":"pasdevelib/1.0"})
-              with urllib.request.urlopen(req, timeout=8) as r:
-                parsed = json.loads(r.read())
-                n = len(parsed) if isinstance(parsed, list) else -1
-                results[name] = {"ok":True,"n":n,"s":str(parsed)[:150]}
-                print(f"OK n={n}: {name}")
+              with urllib.request.urlopen(req, timeout=10) as r:
+                data = r.read().decode(errors="replace")
+                parsed = json.loads(data)
+                if isinstance(parsed, list): n=len(parsed); s=str(parsed[0])[:200] if parsed else ""
+                elif "data" in parsed:
+                  st = parsed["data"].get("stations", parsed["data"].get("feeds", []))
+                  n=len(st); s=str(st[0])[:200] if st else str(parsed)[:200]
+                else: n=-1; s=str(parsed)[:200]
+                results[name]={"ok":True,"n":n,"s":s,"http":r.status}
+                print(f"OK {r.status} n={n}: {name}")
+                print(f"  {s[:150]}")
             except Exception as e:
-              results[name] = {"ok":False,"err":str(e)}
+              results[name]={"ok":False,"err":str(e)}
               print(f"FAIL {name}: {e}")
 
           with open("gbfs_results.json","w") as f:
-            json.dump({"datasets":[d.get("dataset_id") or d.get("datasetid","?") for d in datasets], "tests":results},f,indent=2)
+            json.dump(results,f,indent=2,ensure_ascii=False)
           PYEOF
       - name: Commit
         run: |
           git config user.email "bot@pasdevelib.app"
           git config user.name "pasdevelib-bot"
           git add gbfs_results.json
-          git commit -m "test: find toulouse velo datasets" || true
+          git commit -m "test: toulouse cyclocity" || true
           git push
