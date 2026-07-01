@@ -1,55 +1,38 @@
 {
-  "bordeaux": [
-    {
-      "url": "https://transport.data.gouv.fr/gbfs/vcub-bordeaux-metropole/station_status.json",
-      "ok": false,
-      "err": "HTTP Error 500: Internal Server Error"
-    },
-    {
-      "url": "https://data.bordeaux-metropole.fr/gbfs/vcub/station_status.json",
-      "http": 200,
-      "ok": true,
-      "raw": "\n\n<!DOCTYPE html>\n<html lang=\"fr-FR\">\n    <head>\n    \n    \n\n    \n    \n\n\n\n\n\n\n\n   "
-    },
-    {
-      "url": "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=3",
-      "http": 200,
-      "n": 3,
-      "ok": true
-    },
-    {
-      "url": "https://api.jcdecaux.com/vls/v1/stations?contract=Bordeaux&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
-      "ok": false,
-      "err": "HTTP Error 403: Forbidden"
-    }
-  ],
-  "lyon": [
-    {
-      "url": "https://transport.data.gouv.fr/gbfs/velov/station_status.json",
-      "ok": false,
-      "err": "HTTP Error 500: Internal Server Error"
-    },
-    {
-      "url": "https://download.data.grandlyon.com/files/rdata/jcd_jcdecaux.jcdvelovsimple_2/gbfs/station_status.json",
-      "ok": false,
-      "err": "HTTP Error 401: Unauthorized"
-    },
-    {
-      "url": "https://api.jcdecaux.com/vls/v1/stations?contract=Lyon&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
-      "ok": false,
-      "err": "HTTP Error 403: Forbidden"
-    }
-  ],
-  "toulouse": [
-    {
-      "url": "https://transport.data.gouv.fr/gbfs/velo-toulouse/station_status.json",
-      "ok": false,
-      "err": "HTTP Error 500: Internal Server Error"
-    },
-    {
-      "url": "https://api.jcdecaux.com/vls/v1/stations?contract=Toulouse&apiKey=a20b32f5b62dabb2adb06a12d97042c47dd6f4ad",
-      "ok": false,
-      "err": "HTTP Error 403: Forbidden"
-    }
-  ]
+  "bx_explore": {
+    "ok": true,
+    "n": 3,
+    "sample": "{'geo_point_2d': {'lon': -0.58437, 'lat': 44.83803}, 'geo_shape': {'type': 'Feature', 'geometry': {'coordinates': [-0.58437, 44.83803], 'type': 'Point'}, 'properties': {}}, 'insee': '33063', 'commune'",
+    "http": 200
+  },
+  "ly_ws": {
+    "ok": true,
+    "n": -1,
+    "sample": "{'fields': ['number', 'name', 'address', 'address2', 'address_jcd', 'commune', 'nmarrond', 'bonus', 'pole', 'bike_stands', 'available_bike_stands', 'available_bikes', 'availabilitycode', 'availability",
+    "http": 200
+  },
+  "ly_ogc": {
+    "ok": true,
+    "n": 3,
+    "sample": "{'type': 'Feature', 'id': 'jcd_jcdecaux.jcdvelov.1', 'geometry': {'type': 'Point', 'coordinates': [4.815747, 45.743317]}, 'properties': {'number': 2010, 'name': '2010 - CONFLUENCE / DARSE', 'address':",
+    "http": 200
+  },
+  "ly_wfs": {
+    "ok": true,
+    "n": 3,
+    "sample": "{'type': 'Feature', 'id': 'jcd_jcdecaux.jcdvelov.1', 'geometry': {'type': 'Point', 'coordinates': [4.815747, 45.743317]}, 'properties': {'number': 2010, 'name': '2010 - CONFLUENCE / DARSE', 'address':",
+    "http": 200
+  },
+  "tls_1": {
+    "ok": false,
+    "err": "HTTP Error 404: Not Found"
+  },
+  "tls_2": {
+    "ok": false,
+    "err": "HTTP Error 404: Not Found"
+  },
+  "tls_3": {
+    "ok": false,
+    "err": "HTTP Error 404: Not Found"
+  }
 }
