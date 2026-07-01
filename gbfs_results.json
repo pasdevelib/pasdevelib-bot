@@ -1,28 +1,38 @@
 {
-  "tls_velo_malin": {
-    "ok": false,
-    "err": "HTTP Error 404: Not Found"
-  },
-  "tls_catalog": {
-    "ok": true,
-    "n": 10,
-    "s": "{'visibility': 'domain', 'fields': [{'name': 'exercice', 'description': None, 'annotations': {}, 'label': 'Exercice', 'type': 'double'}, {'name': 'entite_financiere', 'description': None, 'annotations",
-    "http": 200
-  },
-  "tls_gbfs": {
-    "ok": false,
-    "err": "HTTP Error 500: Internal Server Error"
-  },
-  "tls_gbfs_info": {
-    "ok": false,
-    "err": "HTTP Error 500: Internal Server Error"
-  },
-  "tls_tiseo": {
-    "ok": false,
-    "err": "HTTP Error 404: Not Found"
-  },
-  "tls_jcd": {
-    "ok": false,
-    "err": "HTTP Error 403: Forbidden"
+  "datasets": [
+    "budget-primitif-2016-restauration-blagnac0",
+    "toulouse-metropole-marches-notifies-2020",
+    "compte-administratif-2013-ca-alloue-ville-de-toulouse",
+    "rg-2021-1t-candidats",
+    "budget-primitif-2023-regie-transport-blagnac",
+    "dp-2021-2t-vt-binomes-candidats",
+    "cantons-electoraux-haute-garonne-avant-2015",
+    "ville-de-toulouse-cfu-2024",
+    "08-station-meteo-toulouse-basso-cambo-archive-2021",
+    "subventions-versees-a-des-organismes-2021-ville-de-toulouse",
+    "recensement-population-2011-grands-quartiers-familles",
+    "budget-primitif-2016-aeroscopia-blagnac",
+    "budget-primitif-ville-de-toulouse-2018",
+    "subventions-versees-a-des-organismes-2014-toulouse-metropole",
+    "budget-primitif-2015-ccas-blagnac",
+    "elections-municipales-2001-2ieme-tour-ville-de-toulouse-resultats-copie",
+    "compte-administratif-2015-ccas-blagnac",
+    "toulouse-metropole-marches-notifies-2017",
+    "compte-administratif-2016-aeroscopia-blagnac",
+    "budget-primitif-2016-aide-a-domicile-blagnac"
+  ],
+  "tests": {
+    "tls_velomalin": {
+      "ok": false,
+      "err": "HTTP Error 404: Not Found"
+    },
+    "tls_velov_tls": {
+      "ok": false,
+      "err": "HTTP Error 404: Not Found"
+    },
+    "tls_bicycle": {
+      "ok": false,
+      "err": "HTTP Error 404: Not Found"
+    }
   }
 }
