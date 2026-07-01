@@ -11,53 +11,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Test URLs
+      - name: Test Toulouse URLs
         run: |
           python3 << 'PYEOF'
           import urllib.request, json
 
           URLS = [
-            # Bordeaux — opendata explore
-            ("bx_explore", "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=3"),
-            # Lyon — datapusher WS
-            ("ly_ws", "https://data.grandlyon.com/fr/datapusher/ws/rdata/jcd_jcdecaux.jcdvelov/all.json?maxfeatures=3&start=1"),
-            # Lyon — OGC Features
-            ("ly_ogc", "https://data.grandlyon.com/fr/geoserv/ogc/features/v1/collections/metropole-de-lyon:jcd_jcdecaux.jcdvelov/items?crs=EPSG:4171&f=application/geo%2Bjson&limit=3"),
-            # Lyon — WFS
-            ("ly_wfs", "https://data.grandlyon.com/geoserver/metropole-de-lyon/ows?SERVICE=WFS&VERSION=2.0.0&request=GetFeature&typename=metropole-de-lyon:jcd_jcdecaux.jcdvelov&SRSNAME=EPSG:4171&outputFormat=application/json&count=3&startIndex=0"),
-            # Toulouse — opendata
-            ("tls_1", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/velo-toulouse-stations/exports/json?limit=3"),
-            ("tls_2", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/velo_toulouse/exports/json?limit=3"),
-            ("tls_3", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/station_velo/exports/json?limit=3"),
+            ("tls_velo_malin", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/relais-velo-malin/exports/json?limit=3"),
+            ("tls_catalog", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets?q=velo&limit=10"),
+            ("tls_gbfs", "https://transport.data.gouv.fr/gbfs/velo-toulouse/station_status.json"),
+            ("tls_gbfs_info", "https://transport.data.gouv.fr/gbfs/velo-toulouse/station_information.json"),
+            ("tls_tiseo", "https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/tiseo-arrets-et-stations/exports/json?limit=3"),
+            ("tls_jcd", "https://api.jcdecaux.com/vls/v3/stations?contract=Toulouse&apiKey=demo"),
           ]
 
           results = {}
           for name, url in URLS:
             try:
-              req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "pasdevelib/1.0"})
+              req = urllib.request.Request(url, headers={"Accept":"application/json","User-Agent":"pasdevelib/1.0"})
               with urllib.request.urlopen(req, timeout=10) as r:
                 data = r.read().decode(errors="replace")
                 parsed = json.loads(data)
-                if isinstance(parsed, list): n = len(parsed); sample = str(parsed[0])[:200] if parsed else ""
-                elif "features" in parsed: n = len(parsed["features"]); sample = str(parsed["features"][0])[:200] if parsed["features"] else ""
-                elif "results" in parsed: n = len(parsed["results"]); sample = str(parsed["results"][0])[:200] if parsed["results"] else ""
-                else: n = -1; sample = str(parsed)[:200]
-                results[name] = {"ok": True, "n": n, "sample": sample, "http": r.status}
+                if isinstance(parsed, list): n=len(parsed); s=str(parsed[0])[:200] if parsed else ""
+                elif "features" in parsed: n=len(parsed["features"]); s=str(parsed["features"][0])[:200] if parsed["features"] else ""
+                elif "results" in parsed: n=len(parsed["results"]); s=str(parsed["results"][0])[:200] if parsed["results"] else ""
+                elif "datasets" in parsed: n=len(parsed["datasets"]); s=str([x.get("dataset_id") for x in parsed["datasets"][:5]])
+                elif "data" in parsed: 
+                  st=parsed["data"].get("stations",[])
+                  n=len(st); s=str(st[0])[:200] if st else str(parsed)[:200]
+                else: n=-1; s=str(parsed)[:200]
+                results[name]={"ok":True,"n":n,"s":s,"http":r.status}
                 print(f"OK {r.status} n={n}: {name}")
-                print(f"  {sample[:150]}")
+                print(f"  {s[:150]}")
             except Exception as e:
-              results[name] = {"ok": False, "err": str(e)}
+              results[name]={"ok":False,"err":str(e)}
               print(f"FAIL {name}: {e}")
 
-          with open("gbfs_results.json", "w") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
+          with open("gbfs_results.json","w") as f:
+            json.dump(results,f,indent=2,ensure_ascii=False)
           PYEOF
-
       - name: Commit
         run: |
           git config user.email "bot@pasdevelib.app"
           git config user.name "pasdevelib-bot"
           git add gbfs_results.json
-          git commit -m "test: real data source URLs" || true
+          git commit -m "test: toulouse URLs" || true
           git push
