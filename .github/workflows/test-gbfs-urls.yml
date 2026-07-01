@@ -11,46 +11,54 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch station names samples
+      - name: Fetch station names
         run: |
           python3 << 'PYEOF'
           import urllib.request, json
 
           results = {}
 
-          # Paris - quelques stations via /api/stations-now
-          # On sample depuis les données Bordeaux/Lyon/Toulouse
-          URLS = {
-            "bordeaux": "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=30",
-            "lyon": "https://data.grandlyon.com/fr/geoserv/ogc/features/v1/collections/metropole-de-lyon:jcd_jcdecaux.jcdvelov/items?crs=EPSG:4171&f=application/geo%2Bjson&limit=30",
-            "toulouse_info": "https://api.cyclocity.fr/contracts/toulouse/gbfs/station_information.json",
-          }
+          # Bordeaux - 20 premiers noms
+          try:
+            req = urllib.request.Request(
+              "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=20",
+              headers={"Accept":"application/json","User-Agent":"pasdevelib/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+              rows = json.loads(r.read())
+            results["bordeaux"] = [{"id": r.get("ident",""), "nom": r.get("nom","")} for r in rows]
+          except Exception as e:
+            results["bordeaux_err"] = str(e)
 
-          for name, url in URLS.items():
-            try:
-              req = urllib.request.Request(url, headers={"Accept":"application/json","User-Agent":"pasdevelib/1.0"})
-              with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read())
-              if name == "bordeaux":
-                stations = data if isinstance(data, list) else data.get("results", [])
-                results[name] = [{"nom": s.get("nom",""), "commune": s.get("commune","")} for s in stations[:20]]
-              elif name == "lyon":
-                features = data.get("features", [])
-                results[name] = [{"name": f["properties"].get("name",""), "commune": f["properties"].get("commune","")} for f in features[:20]]
-              elif name == "toulouse_info":
-                stations = data.get("data", {}).get("stations", [])
-                results["toulouse"] = [{"name": s.get("name",""), "address": s.get("address","")} for s in stations[:20]]
-            except Exception as e:
-              results[name] = str(e)
+          # Lyon - 20 premiers noms
+          try:
+            req = urllib.request.Request(
+              "https://data.grandlyon.com/fr/geoserv/ogc/features/v1/collections/metropole-de-lyon:jcd_jcdecaux.jcdvelov/items?crs=EPSG:4171&f=application/geo%2Bjson&limit=20",
+              headers={"Accept":"application/json","User-Agent":"pasdevelib/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+              data = json.loads(r.read())
+            results["lyon"] = [{"id": f["properties"].get("number",""), "name": f["properties"].get("name","")} for f in data.get("features",[])]
+          except Exception as e:
+            results["lyon_err"] = str(e)
+
+          # Toulouse - 20 premiers noms
+          try:
+            req = urllib.request.Request(
+              "https://api.cyclocity.fr/contracts/toulouse/gbfs/station_information.json",
+              headers={"Accept":"application/json","User-Agent":"pasdevelib/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+              data = json.loads(r.read())
+            stations = data.get("data",{}).get("stations",[])[:20]
+            results["toulouse"] = [{"id": s.get("station_id",""), "name": s.get("name","")} for s in stations]
+          except Exception as e:
+            results["toulouse_err"] = str(e)
 
           with open("station_names_sample.json", "w") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
-          print("Done")
           PYEOF
       - name: Commit
         run: |
           git config user.email "bot@pasdevelib.app"
           git config user.name "pasdevelib-bot"
           git add station_names_sample.json
-          git commit -m "test: sample station names" || true
+          git commit -m "test: real station names" || true
           git push
