@@ -1,0 +1,167 @@
+{
+  "bordeaux": [
+    {
+      "nom": "Meriadeck",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Saint-Bruno - Hôtel de Région",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Belvédère",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Saint-Seurin",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Gambetta",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Piscine Judaique",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Palais de Justice",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Gavinies",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Stade Chaban Delmas",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Cite Administrative",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Grand Lebrun",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Barrière Saint-Médard",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Dubreuil Turenne",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Lycée Camille Julian",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Galin",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Palais Gallien",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Huguerie",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Tourny",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Grands Hommes",
+      "commune": "Bordeaux"
+    },
+    {
+      "nom": "Puy Paulin",
+      "commune": "Bordeaux"
+    }
+  ],
+  "lyon": "<urlopen error timed out>",
+  "toulouse": [
+    {
+      "name": "POIDS DE L'HUILE",
+      "address": "12 RUE DU POIDS DE L'HUILE"
+    },
+    {
+      "name": "LAFAYETTE",
+      "address": "21 RUE LAFAYETTE"
+    },
+    {
+      "name": "ALSACE-LORRAINE - POMME",
+      "address": "62 RUE DE LA POMME"
+    },
+    {
+      "name": "GAMBETTA - STE-URSULE",
+      "address": "15 RUE SAINTE-URSULE"
+    },
+    {
+      "name": "MARENGO - LEDUC",
+      "address": "FACE AU 5 RUE RENE LEDUC"
+    },
+    {
+      "name": "LOIS - CAPITOLE",
+      "address": "10 RUE DES LOIS"
+    },
+    {
+      "name": "PLACE VICTOR HUGO",
+      "address": "6 RUE DU REMPART VILLENEUVE"
+    },
+    {
+      "name": "BORNE CGB ATELIER",
+      "address": "16 rue Brouardel"
+    },
+    {
+      "name": "VIDAL - SAINT-JÉRÔME",
+      "address": "19 RUE PAUL VIDAL"
+    },
+    {
+      "name": "ROQUEMAUREL - MAILLARD",
+      "address": "RUE ROQUEMAUREL / ANGLE 3 RUE ANNE FRANCK"
+    },
+    {
+      "name": "PLACE ESQUIROL",
+      "address": "15 PL ETIENNE ESQUIROL"
+    },
+    {
+      "name": "PLACE DE LA DAURADE",
+      "address": "2 PL DE LA DAURADE"
+    },
+    {
+      "name": "PARGAMINIÈRES - LAKANAL",
+      "address": "66 RUE PARGAMINIERES"
+    },
+    {
+      "name": "LOIS - ESQUILE",
+      "address": "1 RUE DE L ESQUILE"
+    },
+    {
+      "name": "PÉRIGORD",
+      "address": "26 RUE DE PERIGORD"
+    },
+    {
+      "name": "PORT ST-SAUVEUR - SEEL",
+      "address": "FACE AU 5 PORT SAINT-SAUVEUR"
+    },
+    {
+      "name": "STRASBOURG - BAYARD",
+      "address": "32 BD DE STRASBOURG"
+    },
+    {
+      "name": "STRASBOURG - AUSTERLITZ",
+      "address": "7 BD DE STRASBOURG"
+    },
+    {
+      "name": "STRASBOURG - JAURÈS",
+      "address": "4 BD DE STRASBOURG"
+    },
+    {
+      "name": "CARNOT - PÉRI",
+      "address": "1 RUE DES 7 TROUBADOURS"
+    }
+  ]
+}
