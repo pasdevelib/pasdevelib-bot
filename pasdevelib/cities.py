@@ -45,6 +45,14 @@ CITIES: dict[str, CityConfig] = {
     ),
 
     # ── Bordeaux — Vcub (JCDecaux / Keolis) ──────────────────────
+    # BUG CORRIGE : gbfs_base pointait vers transport.data.gouv.fr, dont le
+    # proxy GBFS pour Bordeaux echoue systematiquement (404/timeout) —
+    # confirme par 3 semaines de scrapes en echec silencieux (fetch_city.py
+    # avale l'exception et renvoie None, jamais remonte). Bordeaux n'expose
+    # de toute facon pas un vrai flux GBFS standard : c'est un JSON "Explore
+    # v2" propre a l'opendata de Bordeaux Metropole (deja utilise et
+    # verifie fonctionnel par app/api/cities-now/route.ts cote webapp) —
+    # necessite un parseur dedie, cf. fetch_bordeaux() plus bas.
     "bordeaux": CityConfig(
         city_id="bordeaux",
         city_name="Bordeaux",
@@ -54,12 +62,15 @@ CITIES: dict[str, CityConfig] = {
         gbfs_base="https://transport.data.gouv.fr/gbfs/vcub-bordeaux-metropole",
         station_info_path="station_information.json",
         station_status_path="station_status.json",
-        opendata_url="https://data.bordeaux-metropole.fr/api/datasets/1.0/ci_vcub_p/records",
+        opendata_url="https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/ci_vcub_p/exports/json?limit=500&timezone=Europe%2FParis",
         bbox=(44.75, -0.75, 44.95, -0.45),
         timezone="Europe/Paris",
     ),
 
     # ── Lyon — Vélo'v (JCDecaux / TCL) ──────────────────────────
+    # Meme situation que Bordeaux : pas un vrai flux GBFS standard, un
+    # GeoJSON OGC Features propre a data.grandlyon.com — parseur dedie,
+    # cf. fetch_lyon() plus bas.
     "lyon": CityConfig(
         city_id="lyon",
         city_name="Lyon",
@@ -69,19 +80,23 @@ CITIES: dict[str, CityConfig] = {
         gbfs_base="https://transport.data.gouv.fr/gbfs/velov",
         station_info_path="station_information.json",
         station_status_path="station_status.json",
-        opendata_url="https://download.data.grandlyon.com/wfs/rdata?SERVICE=WFS&VERSION=2.0.0&request=GetFeature&typename=jcd_jcdecaux.jcdvelovsimple&outputFormat=application/json&SRSNAME=urn:ogc:def:crs:EPSG::4171",
+        opendata_url="https://data.grandlyon.com/fr/geoserv/ogc/features/v1/collections/metropole-de-lyon:jcd_jcdecaux.jcdvelov/items?crs=EPSG:4171&f=application/geo%2Bjson&limit=500&startIndex=0&sortby=gid",
         bbox=(45.7, 4.75, 45.85, 5.0),
         timezone="Europe/Paris",
     ),
 
     # ── Toulouse — VélôToulouse (JCDecaux) ───────────────────────
+    # BUG CORRIGE : gbfs_base pointait vers transport.data.gouv.fr (meme
+    # probleme que Bordeaux/Lyon) — Toulouse expose pourtant un VRAI flux
+    # GBFS standard, juste a la mauvaise adresse. Reste sur fetch_gbfs()
+    # generique, aucun parseur dedie necessaire ici.
     "toulouse": CityConfig(
         city_id="toulouse",
         city_name="Toulouse",
         country="FR",
         operator="JCDecaux",
         system_name="VélôToulouse",
-        gbfs_base="https://transport.data.gouv.fr/gbfs/velo-toulouse",
+        gbfs_base="https://api.cyclocity.fr/contracts/toulouse/gbfs",
         station_info_path="station_information.json",
         station_status_path="station_status.json",
         opendata_url="https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/datasets/tiseo-arrets-et-stations/records",

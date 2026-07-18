@@ -115,13 +115,113 @@ def fetch_gbfs(city: CityConfig) -> Optional[pd.DataFrame]:
         return None
 
 
+def fetch_bordeaux(city: CityConfig) -> Optional[pd.DataFrame]:
+    """Scrape Bordeaux (Vcub) — pas un flux GBFS standard, JSON 'Explore v2'
+    propre a l'opendata de Bordeaux Metropole. Parseur porte tel quel depuis
+    app/api/cities-now/route.ts (webapp), deja verifie fonctionnel en
+    production pour la carte en direct — mêmes champs, même logique.
+    """
+    session = requests.Session()
+    fetched_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    try:
+        data = _get(city.opendata_url, session)
+        rows = []
+        for r in data if isinstance(data, list) else []:
+            geo = r.get("geo_point_2d") or {}
+            lat = geo.get("lat") or r.get("latitude") or 0
+            lon = geo.get("lon") or r.get("longitude") or 0
+            if not lat or not lon:
+                continue
+            total = int(r.get("nbvelos") or 0)
+            elec = int(r.get("nbvelosa") or 0)
+            mec = max(0, total - elec)
+            docks = int(r.get("nbsup") or 0)
+            sid = str(r.get("ident") or r.get("gid") or r.get("id"))
+            rows.append({
+                "station_id": f"bordeaux_{sid}",
+                "city_id": "bordeaux",
+                "name": r.get("nom") or r.get("name") or sid,
+                "lat": float(lat), "lon": float(lon),
+                "capacity": total + docks,
+                "num_bikes_available": total,
+                "num_bikes_mechanical": mec,
+                "num_bikes_ebike": elec,
+                "num_docks_available": docks,
+                "is_installed": 1,
+                "is_renting": 1 if r.get("etat") in ("CONNECTE", "MAINTENANCE") else 0,
+                "is_returning": 1,
+                "last_reported": 0,
+                "fetched_at": fetched_at,
+            })
+        return pd.DataFrame(rows) if rows else None
+    except Exception as e:
+        print(f"[fetch_city] Erreur bordeaux: {e}")
+        return None
+
+
+def fetch_lyon(city: CityConfig) -> Optional[pd.DataFrame]:
+    """Scrape Lyon (Vélo'v) — GeoJSON OGC Features (data.grandlyon.com), pas
+    du GBFS standard. Parseur porte depuis app/api/cities-now/route.ts.
+    """
+    session = requests.Session()
+    fetched_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    try:
+        data = _get(city.opendata_url, session)
+        rows = []
+        for f in data.get("features", []):
+            coords = (f.get("geometry") or {}).get("coordinates")
+            if not coords:
+                continue
+            lon, lat = float(coords[0]), float(coords[1])
+            if not lat or not lon:
+                continue
+            p = f.get("properties") or {}
+            if p.get("available_bike_stands") is not None:
+                total = int((p.get("bike_stands") or 0) - (p.get("available_bike_stands") or 0))
+            else:
+                total = int(p.get("nbvelos") or p.get("availablebikes") or 0)
+            elec = int(p.get("availableebikes") or p.get("nbvelosa") or 0)
+            mec = max(0, total - elec)
+            docks = int(p.get("available_bike_stands") or p.get("nbsup") or 0)
+            sid = str(p.get("number") or p.get("gid") or p.get("id"))
+            rows.append({
+                "station_id": f"lyon_{sid}",
+                "city_id": "lyon",
+                "name": p.get("name") or p.get("nom") or sid,
+                "lat": lat, "lon": lon,
+                "capacity": int(p.get("bike_stands") or (total + docks)),
+                "num_bikes_available": total,
+                "num_bikes_mechanical": mec,
+                "num_bikes_ebike": elec,
+                "num_docks_available": docks,
+                "is_installed": 1,
+                "is_renting": 1 if (p.get("status") == "OPEN" or p.get("etat") == "CONNECTE") else 0,
+                "is_returning": 1,
+                "last_reported": 0,
+                "fetched_at": fetched_at,
+            })
+        return pd.DataFrame(rows) if rows else None
+    except Exception as e:
+        print(f"[fetch_city] Erreur lyon: {e}")
+        return None
+
+
+# Dispatch : Bordeaux/Lyon n'exposent pas un vrai flux GBFS (parseurs
+# dedies ci-dessus) ; Toulouse si (fetch_gbfs generique, cf. plus haut).
+CUSTOM_FETCHERS = {
+    "bordeaux": fetch_bordeaux,
+    "lyon": fetch_lyon,
+}
+
+
 def fetch_all_cities(city_ids: list[str]) -> pd.DataFrame:
     """Scrape toutes les villes et retourne un DataFrame combiné."""
     dfs = []
     for city_id in city_ids:
         city = get_city(city_id)
         print(f"[fetch_city] Scraping {city.city_name} ({city.operator})...")
-        df = fetch_gbfs(city)
+        fetcher = CUSTOM_FETCHERS.get(city_id, fetch_gbfs)
+        df = fetcher(city)
         if df is not None and not df.empty:
             dfs.append(df)
             print(f"  → {len(df)} stations")
