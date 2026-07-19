@@ -1,8 +1,9 @@
-name: consolidate-cities
+name: consolidate-toulouse
 
+# Workflow isole pour toulouse (meme raison que scrape-toulouse.yml).
 on:
   schedule:
-    - cron: '30 3 * * *'  # 3h30 UTC chaque jour (après le consolidate Paris)
+    - cron: '40 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -10,6 +11,7 @@ permissions:
 
 jobs:
   consolidate:
+    name: Consolidate toulouse
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -20,7 +22,7 @@ jobs:
           cache: pip
       - name: Install
         run: pip install -e . requests pandas pyarrow
-      - name: Consolidate cities
+      - name: Consolidate toulouse
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m pasdevelib.consolidate_cities
+        run: python -m pasdevelib.consolidate_cities --cities toulouse

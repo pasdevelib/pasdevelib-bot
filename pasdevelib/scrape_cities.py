@@ -57,10 +57,15 @@ def run(city_ids: list[str] | None = None) -> None:
             city_df = df[df["city_id"] == city_id]
             if city_df.empty:
                 continue
-            city_path = tmp_dir / f"current_day_{city_id}.parquet"
-            city_df.to_parquet(city_path, compression="snappy", index=False)
-            storage.upload_asset(RELEASE_CITIES, city_path, f"current_day_{city_id}.parquet")
-            print(f"[scrape_cities] current_day_{city_id}.parquet uploadé ({len(city_df)} stations)")
+            try:
+                city_path = tmp_dir / f"current_day_{city_id}.parquet"
+                city_df.to_parquet(city_path, compression="snappy", index=False)
+                storage.upload_asset(RELEASE_CITIES, city_path, f"current_day_{city_id}.parquet")
+                print(f"[scrape_cities] current_day_{city_id}.parquet uploadé ({len(city_df)} stations)")
+            except Exception as e:
+                # Isolation par ville (demande de Théo) : un echec d'upload
+                # pour une ville ne doit pas empecher les autres.
+                print(f"[scrape_cities] {city_id}: ECHEC upload ({e})")
 
         # 3. stations_cities.json — liste de toutes les stations multi-villes
         stations_data = []

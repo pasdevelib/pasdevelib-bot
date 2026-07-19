@@ -81,8 +81,23 @@ def run(city_ids: list[str] | None = None) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         for city_id in city_ids:
-            consolidate_city(city_id, tmp_dir)
+            # Isolation explicite (demande de Théo) : un plantage sur UNE
+            # ville (donnee malformee, bug specifique a son format) ne doit
+            # jamais empecher les autres villes de la meme execution
+            # d'etre traitees. En pratique chaque ville tourne deja dans
+            # son propre workflow GitHub Actions (voir consolidate-*.yml) —
+            # ce try/except est une seconde couche de securite si jamais
+            # cette fonction est un jour rappelee avec plusieurs villes.
+            try:
+                consolidate_city(city_id, tmp_dir)
+            except Exception as e:
+                print(f"[consolidate_cities] {city_id}: ECHEC ({e}) — villes suivantes non affectees")
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cities", nargs="+", default=None,
+                        help="IDs des villes à consolider (ex: bordeaux lyon)")
+    args = parser.parse_args()
+    run(args.cities)
