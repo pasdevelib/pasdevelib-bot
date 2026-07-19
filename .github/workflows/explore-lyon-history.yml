@@ -1,0 +1,22 @@
+name: explore-lyon-history
+
+# Temporaire — a supprimer une fois l'exploration terminee. Se declenche
+# uniquement manuellement (Actions > explore-lyon-history > Run workflow),
+# jamais sur un cron.
+on:
+  workflow_dispatch:
+
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install -e . requests
+      - name: Explore Lyon history API
+        run: python -m pasdevelib.explore_lyon_history
