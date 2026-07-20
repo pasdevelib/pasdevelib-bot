@@ -103,6 +103,59 @@ CITIES: dict[str, CityConfig] = {
         bbox=(43.55, 1.35, 43.65, 1.5),
         timezone="Europe/Paris",
     ),
+
+    # ── Lille — V'Lille (Ilévia / MEL) ───────────────────────────
+    # Vrai GBFS standard (v2.3), verifie 100% disponible sur
+    # transport.data.gouv.fr avant de s'engager — pas de parseur dedie
+    # necessaire, fetch_gbfs() generique suffit (comme Toulouse).
+    "lille": CityConfig(
+        city_id="lille",
+        city_name="Lille",
+        country="FR",
+        operator="Ilévia",
+        system_name="V'Lille",
+        gbfs_base="https://media.ilevia.fr/opendata",
+        station_info_path="station_information.json",
+        station_status_path="station_status.json",
+        opendata_url="https://media.ilevia.fr/opendata/gbfs.json",
+        bbox=(50.55, 2.95, 50.70, 3.20),
+        timezone="Europe/Paris",
+    ),
+
+    # ── Rennes — le vélo STAR (Keolis Rennes) ────────────────────
+    # Vrai GBFS standard (v1.0), verifie 100% disponible.
+    "rennes": CityConfig(
+        city_id="rennes",
+        city_name="Rennes",
+        country="FR",
+        operator="Keolis Rennes",
+        system_name="STAR",
+        gbfs_base="https://eu.ftp.opendatasoft.com/star/gbfs",
+        station_info_path="station_information.json",
+        station_status_path="station_status.json",
+        opendata_url="https://eu.ftp.opendatasoft.com/star/gbfs/gbfs.json",
+        bbox=(48.05, -1.75, 48.15, -1.60),
+        timezone="Europe/Paris",
+    ),
+
+    # ── Strasbourg — Vélhop (nextbike) ────────────────────────────
+    # Vrai GBFS standard (v2.3), verifie 100% disponible. Attention :
+    # systeme sans bornes classiques (cadenas sur arceau, boucle) — le
+    # GBFS de nextbike remonte quand meme num_docks_available de facon
+    # standard, aucune adaptation necessaire cote parsing.
+    "strasbourg": CityConfig(
+        city_id="strasbourg",
+        city_name="Strasbourg",
+        country="FR",
+        operator="nextbike",
+        system_name="Vélhop",
+        gbfs_base="https://gbfs.nextbike.net/maps/gbfs/v2/nextbike_ae",
+        station_info_path="station_information.json",
+        station_status_path="station_status.json",
+        opendata_url="https://gbfs.nextbike.net/maps/gbfs/v2/nextbike_ae/gbfs.json",
+        bbox=(48.50, 7.65, 48.65, 7.85),
+        timezone="Europe/Paris",
+    ),
 }
 
 
