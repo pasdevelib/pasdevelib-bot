@@ -149,7 +149,11 @@ CITIES: dict[str, CityConfig] = {
         country="FR",
         operator="nextbike",
         system_name="Vélhop",
-        gbfs_base="https://gbfs.nextbike.net/maps/gbfs/v2/nextbike_ae",
+        # BUG CORRIGE ICI : nextbike sert ses fichiers GBFS sous un
+        # sous-dossier de langue (/fr/), pas a la racine — confirme par
+        # l'export CSV officiel data.strasbourg.eu qui liste les vraies
+        # URLs (.../nextbike_ae/fr/station_information.json).
+        gbfs_base="https://gbfs.nextbike.net/maps/gbfs/v2/nextbike_ae/fr",
         station_info_path="station_information.json",
         station_status_path="station_status.json",
         opendata_url="https://gbfs.nextbike.net/maps/gbfs/v2/nextbike_ae/gbfs.json",
