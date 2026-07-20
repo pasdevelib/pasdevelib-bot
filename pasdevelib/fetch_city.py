@@ -153,6 +153,34 @@ def fetch_bordeaux(city: CityConfig) -> Optional[pd.DataFrame]:
                 "last_reported": 0,
                 "fetched_at": fetched_at,
             })
+
+        # Fusion des doublons "Ilot X" / "X" (meme logique que
+        # app/api/cities-now/route.ts cote webapp) : le reseau bordelais
+        # liste parfois la meme borne physique deux fois — une entree
+        # normale et une entree "Ilot" — pas deux emplacements distincts.
+        # Fusionne ici aussi pour que l'historique accumule (utilise plus
+        # tard par le modele de prediction) ne soit pas pollue par ce
+        # doublon.
+        import unicodedata
+        def _normalize(s):
+            s = unicodedata.normalize("NFD", s)
+            s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+            return s.lower().strip()
+
+        by_name = {_normalize(r["name"]): i for i, r in enumerate(rows) if not _normalize(r["name"]).startswith("ilot ")}
+        to_drop = set()
+        for i, r in enumerate(rows):
+            norm = _normalize(r["name"])
+            if not norm.startswith("ilot "):
+                continue
+            base_idx = by_name.get(norm[len("ilot "):])
+            if base_idx is not None:
+                base = rows[base_idx]
+                for field in ("num_bikes_available", "num_bikes_mechanical", "num_bikes_ebike", "num_docks_available", "capacity"):
+                    base[field] += r[field]
+                to_drop.add(i)
+        rows = [r for i, r in enumerate(rows) if i not in to_drop]
+
         return pd.DataFrame(rows) if rows else None
     except Exception as e:
         print(f"[fetch_city] Erreur bordeaux: {e}")
