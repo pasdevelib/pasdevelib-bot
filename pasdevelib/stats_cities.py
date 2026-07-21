@@ -1,13 +1,22 @@
-"""stats_cities.py — Classements des stations (vides/pleines/fiables) par
-ville, sur 3 fenetres glissantes : jour (derniere journee complete),
-semaine (7 jours), mois (30 jours).
+"""stats_cities.py — Analyses de donnees par ville pour blog.pasdevelib.app/donnees :
 
-Alimente la page publique blog.pasdevelib.app/donnees. Tourne pour TOUTES
-les villes (Paris inclus), avec la meme isolation par ville que
-consolidate_cities.py / forecast_cities.py : un echec sur une ville ne
-bloque jamais les autres.
+1. Classements de stations (vides/pleines/fiables), 3 fenetres glissantes
+   (jour/semaine/mois) — stats_<ville>_<periode>.json
+2. Classement des quartiers/zones les plus problematiques (si geocodage
+   disponible, cf. geocode_stations.py / geocode_cities.py) — inclus dans
+   le fichier ci-dessus (cle "neighborhoods")
+3. Evolution quotidienne du remplissage moyen du reseau, ~90 derniers
+   jours — evolution_<ville>.json (pour un graphe de tendance)
+4. Motif hebdomadaire (jour de semaine x heure), tout l'historique
+   disponible — patterns_<ville>.json (pour une heatmap)
+5. Records (meilleur/pire jour observe) — records_<ville>.json
 
-Schema de sortie (stats_<ville>_<periode>.json, release "stats-cities") :
+Tourne pour TOUTES les villes (Paris inclus), avec la meme isolation par
+ville que consolidate_cities.py / forecast_cities.py : un echec sur une
+ville ne bloque jamais les autres.
+
+Schema de sortie principal (stats_<ville>_<periode>.json, release
+"stats-cities") :
 {
   "city_id", "period" ("day"|"week"|"month"),
   "generated_at", "window_start", "window_end",
@@ -16,6 +25,8 @@ Schema de sortie (stats_<ville>_<periode>.json, release "stats-cities") :
   "top_full":       [{station_id, name, pct_full,  n_obs}, ...] (20 max)
   "most_reliable":  [{station_id, name, pct_healthy, n_obs}, ...] (20 max)
   "worst":          [{station_id, name, pct_extreme, n_obs}, ...] (20 max)
+  "neighborhoods":  [{zone, pct_extreme, n_stations, n_obs}, ...] (10 max)
+                    absent si aucune station de la ville n'a de zone geocodee.
 }
 
 "pct_healthy" = part du temps ou la station est ni quasi-vide ni quasi-
@@ -42,6 +53,9 @@ from pasdevelib.cities import list_cities
 RELEASE_STATS = "stats-cities"
 MIN_OBS_RATIO = 0.3  # une station doit avoir des donnees au moins 30% du temps de la fenetre pour etre classee
 TOP_N = 20
+TOP_N_ZONES = 10
+EVOLUTION_DAYS = 90
+MIN_ZONE_STATIONS = 3  # une zone avec moins de stations n'est pas assez representative pour etre classee
 
 PERIODS = {
     "day": 1,
@@ -68,21 +82,26 @@ def _download_json(release: str, asset: str) -> list | None:
     return r.json()
 
 
-def _load_history_and_names(city_id: str) -> tuple[pd.DataFrame, dict[str, str]] | None:
+def _load_history_and_names(city_id: str) -> tuple[pd.DataFrame, dict[str, str], dict[str, str]] | None:
+    """Retourne (hourly_history, {station_id: name}, {station_id: zone}).
+
+    Le dict de zones peut etre vide (geocodage pas encore passe, ou champ
+    absent) — tout le code appelant doit tolerer ce cas sans planter.
+    """
     if city_id == "paris":
         hourly = _download_parquet(storage.RELEASE_AGGREGATES, "hourly_history.parquet")
         stations_raw = _download_json(storage.RELEASE_LIVE, "stations.json")
         names = {str(s["station_id"]): s.get("name", str(s["station_id"])) for s in (stations_raw or [])}
+        zones = {str(s["station_id"]): s["zone"] for s in (stations_raw or []) if s.get("zone")}
     else:
         hourly = _download_parquet("cities-history", f"hourly_history_{city_id}.parquet")
         stations_raw = _download_json("cities-live", "stations_cities.json")
-        names = {
-            str(s["station_id"]): s.get("name", str(s["station_id"]))
-            for s in (stations_raw or []) if s.get("city_id") == city_id
-        }
+        city_stations = [s for s in (stations_raw or []) if s.get("city_id") == city_id]
+        names = {str(s["station_id"]): s.get("name", str(s["station_id"])) for s in city_stations}
+        zones = {str(s["station_id"]): s["zone"] for s in city_stations if s.get("zone")}
     if hourly is None or hourly.empty:
         return None
-    return hourly, names
+    return hourly, names, zones
 
 
 def _rank(df: pd.DataFrame, sort_col: str, value_col: str, names: dict[str, str]) -> list[dict]:
@@ -98,7 +117,39 @@ def _rank(df: pd.DataFrame, sort_col: str, value_col: str, names: dict[str, str]
     ]
 
 
-def compute_period(hourly: pd.DataFrame, names: dict[str, str], days: int) -> dict:
+def _rank_zones(window: pd.DataFrame, zones: dict[str, str]) -> list[dict] | None:
+    if not zones:
+        return None
+    df = window.copy()
+    df["zone"] = df["station_id"].astype(str).map(zones)
+    df = df[df["zone"].notna()]
+    if df.empty:
+        return None
+
+    grouped = df.groupby("zone").agg(
+        pct_empty=("fill_rate", lambda s: float((s <= 0.05).mean())),
+        pct_full=("fill_rate", lambda s: float((s >= 0.95).mean())),
+        n_obs=("fill_rate", "count"),
+        n_stations=("station_id", "nunique"),
+    ).reset_index()
+    grouped["pct_extreme"] = grouped["pct_empty"] + grouped["pct_full"]
+    grouped = grouped[grouped["n_stations"] >= MIN_ZONE_STATIONS]
+    if grouped.empty:
+        return None
+
+    top = grouped.sort_values("pct_extreme", ascending=False).head(TOP_N_ZONES)
+    return [
+        {
+            "zone": row.zone,
+            "pct_extreme": round(float(row.pct_extreme), 3),
+            "n_stations": int(row.n_stations),
+            "n_obs": int(row.n_obs),
+        }
+        for row in top.itertuples()
+    ]
+
+
+def compute_period(hourly: pd.DataFrame, names: dict[str, str], zones: dict[str, str], days: int) -> dict:
     hourly = hourly.copy()
     hourly["date"] = pd.to_datetime(hourly["date"])
     window_end = hourly["date"].max()
@@ -120,7 +171,7 @@ def compute_period(hourly: pd.DataFrame, names: dict[str, str], days: int) -> di
 
     eligible = grouped[grouped["n_obs"] >= min_obs]
 
-    return {
+    result = {
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
         "window_start": window_start.date().isoformat(),
         "window_end": window_end.date().isoformat(),
@@ -130,6 +181,74 @@ def compute_period(hourly: pd.DataFrame, names: dict[str, str], days: int) -> di
         "most_reliable": _rank(eligible, "pct_healthy", "pct_healthy", names),
         "worst": _rank(eligible, "pct_extreme", "pct_extreme", names),
     }
+    neighborhoods = _rank_zones(window, zones)
+    if neighborhoods is not None:
+        result["neighborhoods"] = neighborhoods
+    return result
+
+
+def compute_evolution(hourly: pd.DataFrame) -> dict:
+    """Serie quotidienne du remplissage moyen du reseau, ~90 derniers jours
+    (pour un graphe de tendance sur la page Donnees)."""
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    end = df["date"].max()
+    start = end - pd.Timedelta(days=EVOLUTION_DAYS - 1)
+    window = df[df["date"] >= start]
+
+    daily = window.groupby("date")["fill_rate"].mean().reset_index()
+    daily = daily.sort_values("date")
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "window_start": start.date().isoformat(),
+        "window_end": end.date().isoformat(),
+        "series": [
+            {"date": row.date.date().isoformat(), "avg_fill_rate": round(float(row.fill_rate), 3)}
+            for row in daily.itertuples()
+        ],
+    }
+
+
+def compute_patterns(hourly: pd.DataFrame) -> dict:
+    """Grille jour-de-semaine x heure (remplissage moyen), tout l'historique
+    disponible — pour une heatmap "quel jour/heure est le pire" sur la page
+    Donnees. weekday : 0=lundi ... 6=dimanche (convention pandas)."""
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["weekday"] = df["date"].dt.dayofweek
+
+    grid = df.groupby(["weekday", "hour"])["fill_rate"].mean().reset_index()
+    cells = [
+        {"weekday": int(row.weekday), "hour": int(row.hour), "avg_fill_rate": round(float(row.fill_rate), 3)}
+        for row in grid.itertuples()
+    ]
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "n_days_covered": int(df["date"].nunique()),
+        "cells": cells,
+    }
+
+
+def compute_records(hourly: pd.DataFrame) -> dict:
+    """Meilleur et pire jour observes (remplissage moyen du reseau sur
+    l'historique disponible) — pour un encart "records" sur la page
+    Donnees."""
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    daily = df.groupby("date")["fill_rate"].agg(["mean", "count"]).reset_index()
+    # Un jour avec trop peu d'observations (scrape interrompu) fausserait
+    # le record — meme logique de seuil que compute_period.
+    daily = daily[daily["count"] >= 24 * 0.3]
+    if daily.empty:
+        return {"generated_at": dt.datetime.utcnow().isoformat() + "Z", "best_day": None, "worst_day": None}
+
+    best = daily.loc[daily["mean"].idxmax()]
+    worst = daily.loc[daily["mean"].idxmin()]
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "best_day": {"date": best["date"].date().isoformat(), "avg_fill_rate": round(float(best["mean"]), 3)},
+        "worst_day": {"date": worst["date"].date().isoformat(), "avg_fill_rate": round(float(worst["mean"]), 3)},
+    }
 
 
 def run_city(city_id: str) -> None:
@@ -138,20 +257,35 @@ def run_city(city_id: str) -> None:
     if loaded is None:
         print(f"[stats_cities] {city_id}: pas d'historique disponible, skip")
         return
-    hourly, names = loaded
+    hourly, names, zones = loaded
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
+
         for period, days in PERIODS.items():
-            result = compute_period(hourly, names, days)
+            result = compute_period(hourly, names, zones, days)
             result["city_id"] = city_id
             result["period"] = period
             out_name = f"stats_{city_id}_{period}.json"
             out_path = tmp_dir / out_name
             out_path.write_text(json.dumps(result, ensure_ascii=False))
             storage.upload_asset(RELEASE_STATS, out_path, out_name)
+            zone_note = f", {len(result['neighborhoods'])} quartiers" if "neighborhoods" in result else ""
             print(f"[stats_cities] {city_id}: {out_name} uploade "
-                  f"({len(result['top_empty'])} stations classees, fenetre {result['window_start']}..{result['window_end']})")
+                  f"({len(result['top_empty'])} stations classees{zone_note}, fenetre {result['window_start']}..{result['window_end']})")
+
+        for name, compute_fn in [
+            ("evolution", compute_evolution),
+            ("patterns", compute_patterns),
+            ("records", compute_records),
+        ]:
+            result = compute_fn(hourly)
+            result["city_id"] = city_id
+            out_name = f"{name}_{city_id}.json"
+            out_path = tmp_dir / out_name
+            out_path.write_text(json.dumps(result, ensure_ascii=False))
+            storage.upload_asset(RELEASE_STATS, out_path, out_name)
+            print(f"[stats_cities] {city_id}: {out_name} uploade")
 
 
 def run(city_ids: list[str] | None = None) -> None:
