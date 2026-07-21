@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        city: [bordeaux, lyon, toulouse, lille, rennes, strasbourg]
+        city: [bordeaux, lyon, toulouse, lille, rennes, strasbourg, nantes, montpellier]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

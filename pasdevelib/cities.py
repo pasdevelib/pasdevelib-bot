@@ -160,6 +160,48 @@ CITIES: dict[str, CityConfig] = {
         bbox=(48.50, 7.65, 48.65, 7.85),
         timezone="Europe/Paris",
     ),
+
+    # ── Nantes — Bicloo (JCDecaux) — STEALTH (non exposee cote webapp) ──
+    # Vrai GBFS standard (v2.3), endpoint verifie manuellement avant
+    # integration (meme prudence que pour Strasbourg/Bordeaux/Lyon plus
+    # haut) : le chemin versionne /v2/ est necessaire, la racine
+    # /contracts/nantes/gbfs/station_information.json seule ne suffit pas
+    # sur cyclocity.fr — confirme en interrogeant gbfs.json qui liste
+    # explicitement les URLs /v2/ pour chaque flux.
+    "nantes": CityConfig(
+        city_id="nantes",
+        city_name="Nantes",
+        country="FR",
+        operator="JCDecaux",
+        system_name="Bicloo",
+        gbfs_base="https://api.cyclocity.fr/contracts/nantes/gbfs/v2",
+        station_info_path="station_information.json",
+        station_status_path="station_status.json",
+        opendata_url="https://api.cyclocity.fr/contracts/nantes/gbfs/gbfs.json",
+        bbox=(47.15, -1.65, 47.28, -1.50),
+        timezone="Europe/Paris",
+    ),
+
+    # ── Montpellier — Vélomagg (Smoove/TaM) — STEALTH ────────────────
+    # Vrai GBFS (v2.2), endpoint verifie manuellement. Meme fournisseur
+    # (Smoove) que Paris Velib' — noter que les vehicle_type_id sont des
+    # codes numeriques ("14", "7"...) plutot que des libelles explicites
+    # ("ebike"), donc le split mecanique/electrique de fetch_gbfs() ne
+    # se declenche pas ici (tout compte en mecanique) — sans impact sur
+    # la prediction principale, qui se base sur num_bikes_available brut.
+    "montpellier": CityConfig(
+        city_id="montpellier",
+        city_name="Montpellier",
+        country="FR",
+        operator="Smoove / TaM",
+        system_name="Vélomagg",
+        gbfs_base="https://gbfs.theta.fifteen.eu/gbfs/2.2/montpellier/en",
+        station_info_path="station_information.json",
+        station_status_path="station_status.json",
+        opendata_url="https://gbfs.theta.fifteen.eu/gbfs/montpellier/gbfs.json",
+        bbox=(43.55, 3.82, 43.64, 3.97),
+        timezone="Europe/Paris",
+    ),
 }
 
 
