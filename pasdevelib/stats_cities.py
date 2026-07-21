@@ -176,6 +176,10 @@ def compute_period(hourly: pd.DataFrame, names: dict[str, str], zones: dict[str,
         "window_start": window_start.date().isoformat(),
         "window_end": window_end.date().isoformat(),
         "city_avg_fill_rate": round(float(window["fill_rate"].mean()), 3) if not window.empty else None,
+        # Moyenne de pct_healthy sur TOUTES les stations eligibles (pas
+        # seulement le top 20) — sert de score comparable entre villes
+        # ("quel reseau est le plus fiable ?"), cf. page Donnees.
+        "city_avg_pct_healthy": round(float(eligible["pct_healthy"].mean()), 3) if not eligible.empty else None,
         "top_empty": _rank(eligible, "pct_empty", "pct_empty", names),
         "top_full": _rank(eligible, "pct_full", "pct_full", names),
         "most_reliable": _rank(eligible, "pct_healthy", "pct_healthy", names),
