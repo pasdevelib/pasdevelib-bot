@@ -49,11 +49,16 @@ def _to_dataframe(payload: dict) -> pd.DataFrame:
     return df
 
 
-def fetch_archive(start: dt.date, end: dt.date) -> pd.DataFrame:
-    """Météo historique (lag de ~5 jours par rapport à aujourd'hui)."""
+def fetch_archive(start: dt.date, end: dt.date, lat: float = PARIS_LAT, lon: float = PARIS_LON) -> pd.DataFrame:
+    """Météo historique (lag de ~5 jours par rapport à aujourd'hui).
+
+    lat/lon optionnels (defaut Paris, retrocompatible) — permet de reutiliser
+    cette fonction pour les autres villes (forecast_cities.py) sans toucher
+    aux appels existants.
+    """
     params = {
-        "latitude": PARIS_LAT,
-        "longitude": PARIS_LON,
+        "latitude": lat,
+        "longitude": lon,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "hourly": ",".join(HOURLY_VARS),
@@ -67,11 +72,15 @@ def fetch_archive(start: dt.date, end: dt.date) -> pd.DataFrame:
     return _to_dataframe(r.json())
 
 
-def fetch_forecast(days: int = 7) -> pd.DataFrame:
-    """Prévisions horaires (jusqu'à 16 jours, on se limite à 7)."""
+def fetch_forecast(days: int = 7, lat: float = PARIS_LAT, lon: float = PARIS_LON) -> pd.DataFrame:
+    """Prévisions horaires (jusqu'à 16 jours, on se limite à 7).
+
+    lat/lon optionnels (defaut Paris, retrocompatible) — meme raison que
+    fetch_archive ci-dessus.
+    """
     params = {
-        "latitude": PARIS_LAT,
-        "longitude": PARIS_LON,
+        "latitude": lat,
+        "longitude": lon,
         "hourly": ",".join(HOURLY_VARS),
         "forecast_days": min(days, 16),
         "timezone": "Europe/Paris",

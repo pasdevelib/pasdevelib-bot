@@ -173,3 +173,17 @@ def get_city(city_id: str) -> CityConfig:
 def list_cities() -> list[str]:
     """Retourne la liste des IDs de villes supportées."""
     return list(CITIES.keys())
+
+
+def city_center_latlon(city_id: str) -> tuple[float, float]:
+    """Point (lat, lon) représentatif d'une ville — centroïde de son bbox.
+
+    Suffisant pour la météo (comme note Paris déjà : la météo varie peu
+    a l'echelle d'une ville), evite d'avoir a maintenir un point dedie
+    par ville en plus du bbox deja present.
+    """
+    city = get_city(city_id)
+    if city.bbox is None:
+        raise ValueError(f"Pas de bbox défini pour {city_id}, impossible de calculer un centre.")
+    lat_min, lon_min, lat_max, lon_max = city.bbox
+    return (lat_min + lat_max) / 2.0, (lon_min + lon_max) / 2.0
