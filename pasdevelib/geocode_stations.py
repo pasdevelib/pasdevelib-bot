@@ -24,18 +24,36 @@ API_URL = "https://api-adresse.data.gouv.fr/reverse/csv/"
 
 
 def get_zone(citycode: str, city: str) -> str:
-    """Convertit citycode INSEE en label de zone."""
+    """Convertit citycode INSEE en label de zone.
+
+    Gere les 3 villes françaises a arrondissements (Paris, Lyon, Marseille)
+    — generalise ici pour etre reutilise par geocode_cities.py (villes
+    secondaires), pas seulement par ce script (Paris uniquement a l'origine).
+    """
     citycode = citycode.strip()
     city = city.strip()
     if citycode.startswith("750") and len(citycode) == 5:
         arr = int(citycode[3:])
         suffix = "er" if arr == 1 else "e"
         return f"Paris {arr}{suffix}"
+    if citycode.startswith("6938") and len(citycode) == 5:
+        arr = int(citycode[3:])
+        suffix = "er" if arr == 1 else "e"
+        return f"Lyon {arr}{suffix}"
+    if citycode.startswith("132") and len(citycode) == 5 and 13201 <= int(citycode) <= 13216:
+        arr = int(citycode) - 13200
+        suffix = "er" if arr == 1 else "e"
+        return f"Marseille {arr}{suffix}"
     return city if city else "Île-de-France"
 
 
-def geocode_batch(stations: list[dict]) -> dict[str, str]:
-    """Géocode un batch de stations via CSV, retourne {station_id: zone}."""
+def geocode_batch(stations: list[dict], fallback_zone: str = "Paris") -> dict[str, str]:
+    """Géocode un batch de stations via CSV, retourne {station_id: zone}.
+
+    fallback_zone : valeur utilisee si l'appel API echoue completement —
+    parametrable car ce module est aussi reutilise par geocode_cities.py
+    (villes secondaires), ou "Paris" par defaut n'aurait aucun sens.
+    """
     result: dict[str, str] = {}
 
     # Construire le CSV avec header
@@ -75,7 +93,7 @@ def geocode_batch(stations: list[dict]) -> dict[str, str]:
         print(f"[geocode] batch error: {e}")
         for s in stations:
             sid = str(s.get("station_id", s.get("stationcode", "")))
-            result[sid] = "Paris"
+            result[sid] = fallback_zone
 
     return result
 
