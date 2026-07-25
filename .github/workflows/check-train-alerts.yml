@@ -1,0 +1,22 @@
+name: check-train-alerts
+
+# Verifie et envoie les alertes "mon train arrive bientot" (webapp,
+# app/api/cron/check-train-alerts) toutes les 5 minutes. Fait ici plutot
+# que via un cron Vercel : le plan Hobby (gratuit) limite les crons
+# Vercel a une execution par jour maximum, incompatible avec la
+# frequence necessaire ici — GitHub Actions n'a pas cette limite et est
+# deja utilise partout ailleurs dans ce projet pour du zero-cout.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check and send train alerts
+        run: |
+          curl -sf "https://pasdevelib.app/api/cron/check-train-alerts?secret=${{ secrets.TRAIN_ALERTS_CRON_SECRET }}" \
+            || echo "::warning::check-train-alerts a echoue (voir logs webapp Vercel)"
