@@ -45,6 +45,7 @@ import tempfile
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import requests
 
 from pasdevelib import storage
@@ -82,26 +83,33 @@ def _download_json(release: str, asset: str) -> list | None:
     return r.json()
 
 
-def _load_history_and_names(city_id: str) -> tuple[pd.DataFrame, dict[str, str], dict[str, str]] | None:
-    """Retourne (hourly_history, {station_id: name}, {station_id: zone}).
+def _load_history_and_names(city_id: str) -> tuple[pd.DataFrame, dict[str, str], dict[str, str], dict[str, float]] | None:
+    """Retourne (hourly_history, {station_id: name}, {station_id: zone}, {station_id: capacity}).
 
     Le dict de zones peut etre vide (geocodage pas encore passe, ou champ
     absent) — tout le code appelant doit tolerer ce cas sans planter.
+    capacity sert a convertir des variations de fill_rate (ratio) en
+    nombre de velos estime (cf. compute_traffic) — defensif sur le nom du
+    champ id (station_id vs id selon la version du fichier source).
     """
     if city_id == "paris":
         hourly = _download_parquet(storage.RELEASE_AGGREGATES, "hourly_history.parquet")
         stations_raw = _download_json(storage.RELEASE_LIVE, "stations.json")
-        names = {str(s["station_id"]): s.get("name", str(s["station_id"])) for s in (stations_raw or [])}
-        zones = {str(s["station_id"]): s["zone"] for s in (stations_raw or []) if s.get("zone")}
+        sid = lambda s: str(s.get("station_id") or s.get("id") or "")
+        names = {sid(s): s.get("name", sid(s)) for s in (stations_raw or [])}
+        zones = {sid(s): s["zone"] for s in (stations_raw or []) if s.get("zone")}
+        capacities = {sid(s): float(s.get("capacity") or 0) for s in (stations_raw or [])}
     else:
         hourly = _download_parquet("cities-history", f"hourly_history_{city_id}.parquet")
         stations_raw = _download_json("cities-live", "stations_cities.json")
         city_stations = [s for s in (stations_raw or []) if s.get("city_id") == city_id]
-        names = {str(s["station_id"]): s.get("name", str(s["station_id"])) for s in city_stations}
-        zones = {str(s["station_id"]): s["zone"] for s in city_stations if s.get("zone")}
+        sid = lambda s: str(s.get("station_id") or s.get("id") or "")
+        names = {sid(s): s.get("name", sid(s)) for s in city_stations}
+        zones = {sid(s): s["zone"] for s in city_stations if s.get("zone")}
+        capacities = {sid(s): float(s.get("capacity") or 0) for s in city_stations}
     if hourly is None or hourly.empty:
         return None
-    return hourly, names, zones
+    return hourly, names, zones, capacities
 
 
 def _rank(df: pd.DataFrame, sort_col: str, value_col: str, names: dict[str, str]) -> list[dict]:
@@ -255,13 +263,140 @@ def compute_records(hourly: pd.DataFrame) -> dict:
     }
 
 
+def compute_traffic(hourly: pd.DataFrame, capacities: dict[str, str]) -> dict:
+    """Estimation du "trafic" velo (mouvements de velos) a partir des
+    variations de fill_rate d'une heure a l'autre, par station.
+
+    IMPORTANT (limite methodologique, a rappeler cote UI) : les flux GBFS
+    ne donnent jamais de vrais trajets individuels (pas de "check-out" /
+    "check-in" trace), seulement des snapshots d'occupation par station.
+    Ce calcul est donc une ESTIMATION par variation nette d'occupation
+    (fill_rate(h) - fill_rate(h-1)) x capacite de la station, pas un
+    comptage exact. Les operations de rebalancement (camions) et les
+    velos deposes hors station ne sont pas isolables de cette methode.
+
+    "Depart" = diminution du nombre de velos disponibles a une station
+    (quelqu'un a pris un velo, par hypothese). Choisi plutot que les
+    arrivees pour la coherence du proxy "vélos qui roulent" — les deux
+    convergent a peu pres sur une pleine journee (departs ~ arrivees).
+    """
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["capacity"] = df["station_id"].astype(str).map(capacities).fillna(0)
+    df = df[df["capacity"] > 0]
+    df = df.sort_values(["station_id", "date", "hour"])
+
+    # Delta entre heures consecutives POUR LA MEME STATION uniquement
+    # (groupby.diff() respecte deja les groupes, mais on verifie aussi
+    # que l'heure precedente est bien h-1 ou le jour precedent 23h, pour
+    # ne pas compter un trou de plusieurs heures comme un seul "depart").
+    df["prev_station"] = df["station_id"].shift(1)
+    df["prev_date"] = df["date"].shift(1)
+    df["prev_hour"] = df["hour"].shift(1)
+    df["is_consecutive"] = (df["station_id"] == df["prev_station"]) & (
+        ((df["hour"] - df["prev_hour"] == 1) & (df["date"] == df["prev_date"])) |
+        ((df["prev_hour"] == 23) & (df["hour"] == 0) & ((df["date"] - df["prev_date"]).dt.days == 1))
+    )
+    df["delta_bikes"] = df.groupby("station_id")["fill_rate"].diff() * df["capacity"]
+    df.loc[~df["is_consecutive"], "delta_bikes"] = None
+    # Departs estimes = diminutions (delta negatif), en valeur absolue.
+    df["departures"] = (-df["delta_bikes"]).clip(lower=0)
+
+    valid = df.dropna(subset=["departures"])
+
+    bikes_per_hour = valid.groupby("hour")["departures"].sum() / max(valid["date"].nunique(), 1)
+    bikes_per_hour_list = [
+        {"hour": h, "avg_departures": round(float(bikes_per_hour.get(h, 0.0)), 1)}
+        for h in range(24)
+    ]
+
+    trips_per_day = valid.groupby("date")["departures"].sum().reset_index()
+    trips_per_day = trips_per_day.sort_values("date").tail(90)
+    trips_per_day_list = [
+        {"date": row.date.date().isoformat(), "trips": round(float(row.departures))}
+        for row in trips_per_day.itertuples()
+    ]
+
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "method_note": "Estimation par variation nette d'occupation station par station (pas un comptage exact de trajets individuels)",
+        "bikes_per_hour": bikes_per_hour_list,
+        "trips_per_day": trips_per_day_list,
+    }
+
+
+def compute_stuck_stations(hourly: pd.DataFrame, names: dict[str, str]) -> dict:
+    """Plus longues sequences CONSECUTIVES a vide (fill_rate <= 0.05) et a
+    pleine (fill_rate >= 0.95) par station, sur tout l'historique
+    disponible. Repond au besoin "combien de temps une station reste
+    bloquee", different d'un simple pourcentage cumule (une station a
+    20% de temps vide peut etre soit 20% tous les jours un peu, soit
+    bloquee 5 jours d'affilee une fois — les deux racontent une histoire
+    tres differente pour un journaliste)."""
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["ts"] = df["date"] + pd.to_timedelta(df["hour"], unit="h")
+    df = df.sort_values(["station_id", "ts"])
+
+    def longest_streak(sub: pd.DataFrame, condition_col: str) -> tuple[float, str, str]:
+        """Retourne (duree_heures, debut_iso, fin_iso) de la plus longue
+        sequence consecutive (heure a heure, sans trou) ou condition_col
+        est vrai."""
+        is_true = sub[condition_col].to_numpy()
+        ts = sub["ts"].to_numpy()
+        best_len, best_start, best_end = 0, None, None
+        run_start_idx = None
+        for i in range(len(sub)):
+            consecutive_hour = i == 0 or (ts[i] - ts[i - 1]) == np.timedelta64(1, "h")
+            if is_true[i] and consecutive_hour:
+                if run_start_idx is None:
+                    run_start_idx = i
+            else:
+                if run_start_idx is not None:
+                    run_len = i - run_start_idx
+                    if run_len > best_len:
+                        best_len, best_start, best_end = run_len, run_start_idx, i - 1
+                    run_start_idx = None
+                if is_true[i]:
+                    run_start_idx = i
+        if run_start_idx is not None:
+            run_len = len(sub) - run_start_idx
+            if run_len > best_len:
+                best_len, best_start, best_end = run_len, run_start_idx, len(sub) - 1
+        if best_start is None:
+            return 0.0, None, None
+        return float(best_len), pd.Timestamp(ts[best_start]).isoformat(), pd.Timestamp(ts[best_end]).isoformat()
+
+    df["is_empty"] = df["fill_rate"] <= 0.05
+    df["is_full"] = df["fill_rate"] >= 0.95
+
+    empty_results, full_results = [], []
+    for sid, sub in df.groupby("station_id"):
+        sub = sub.reset_index(drop=True)
+        e_len, e_start, e_end = longest_streak(sub, "is_empty")
+        f_len, f_start, f_end = longest_streak(sub, "is_full")
+        if e_len >= 6:  # au moins 6h consecutives pour etre significatif
+            empty_results.append({"station_id": str(sid), "name": names.get(str(sid), str(sid)), "hours": e_len, "start": e_start, "end": e_end})
+        if f_len >= 6:
+            full_results.append({"station_id": str(sid), "name": names.get(str(sid), str(sid)), "hours": f_len, "start": f_start, "end": f_end})
+
+    empty_results.sort(key=lambda r: r["hours"], reverse=True)
+    full_results.sort(key=lambda r: r["hours"], reverse=True)
+
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "longest_empty": empty_results[:10],
+        "longest_full": full_results[:10],
+    }
+
+
 def run_city(city_id: str) -> None:
     print(f"[stats_cities] === {city_id} ===")
     loaded = _load_history_and_names(city_id)
     if loaded is None:
         print(f"[stats_cities] {city_id}: pas d'historique disponible, skip")
         return
-    hourly, names, zones = loaded
+    hourly, names, zones, capacities = loaded
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
@@ -290,6 +425,24 @@ def run_city(city_id: str) -> None:
             out_path.write_text(json.dumps(result, ensure_ascii=False))
             storage.upload_asset(RELEASE_STATS, out_path, out_name)
             print(f"[stats_cities] {city_id}: {out_name} uploade")
+
+        # Trafic estime (velos en mouvement) et stations bloquees vides/
+        # pleines longtemps — demande explicite, pas dans la premiere
+        # version de cette page.
+        traffic = compute_traffic(hourly, capacities)
+        traffic["city_id"] = city_id
+        out_path = tmp_dir / f"traffic_{city_id}.json"
+        out_path.write_text(json.dumps(traffic, ensure_ascii=False))
+        storage.upload_asset(RELEASE_STATS, out_path, f"traffic_{city_id}.json")
+        print(f"[stats_cities] {city_id}: traffic_{city_id}.json uploade")
+
+        stuck = compute_stuck_stations(hourly, names)
+        stuck["city_id"] = city_id
+        out_path = tmp_dir / f"stuck_{city_id}.json"
+        out_path.write_text(json.dumps(stuck, ensure_ascii=False))
+        storage.upload_asset(RELEASE_STATS, out_path, f"stuck_{city_id}.json")
+        print(f"[stats_cities] {city_id}: stuck_{city_id}.json uploade "
+              f"({len(stuck['longest_empty'])} stations vides longtemps, {len(stuck['longest_full'])} pleines longtemps)")
 
 
 def run(city_ids: list[str] | None = None) -> None:
