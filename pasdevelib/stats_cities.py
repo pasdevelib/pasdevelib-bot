@@ -49,7 +49,8 @@ import numpy as np
 import requests
 
 from pasdevelib import storage
-from pasdevelib.cities import list_cities
+from pasdevelib import weather
+from pasdevelib.cities import list_cities, CITIES
 
 RELEASE_STATS = "stats-cities"
 MIN_OBS_RATIO = 0.3  # une station doit avoir des donnees au moins 30% du temps de la fenetre pour etre classee
@@ -444,8 +445,94 @@ def run_city(city_id: str) -> None:
         print(f"[stats_cities] {city_id}: stuck_{city_id}.json uploade "
               f"({len(stuck['longest_empty'])} stations vides longtemps, {len(stuck['longest_full'])} pleines longtemps)")
 
+        # Impact meteo (sensibilite a la pluie) — demande explicite suite
+        # a un tour d'horizon academique/journalistique sur les VLS.
+        # Centre approximatif de la ville = centre de son bbox (deja
+        # defini dans cities.py, pas de nouvelle config necessaire).
+        city_cfg = CITIES.get(city_id)
+        if city_cfg and city_cfg.bbox:
+            lat_min, lon_min, lat_max, lon_max = city_cfg.bbox
+            center_lat, center_lon = (lat_min + lat_max) / 2, (lon_min + lon_max) / 2
+            weather_stats = compute_weather_impact(hourly, capacities, center_lat, center_lon)
+            weather_stats["city_id"] = city_id
+            out_path = tmp_dir / f"weather_{city_id}.json"
+            out_path.write_text(json.dumps(weather_stats, ensure_ascii=False))
+            storage.upload_asset(RELEASE_STATS, out_path, f"weather_{city_id}.json")
+            print(f"[stats_cities] {city_id}: weather_{city_id}.json uploade (ready={weather_stats.get('ready')})")
 
-def run(city_ids: list[str] | None = None) -> None:
+
+def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat: float, lon: float) -> dict:
+    """Compare l'activite du reseau (trajets estimes/jour, meme methode que
+    compute_traffic) les jours de pluie vs les jours secs — demande
+    explicite ("sensibilite a la pluie") tiree d'un tour d'horizon de ce
+    qui se fait en recherche academique sur les VLS. Meteo historique via
+    Open-Meteo (deja utilise pour les predictions, pas de nouvelle
+    dependance).
+    """
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["capacity"] = df["station_id"].astype(str).map(capacities).fillna(0)
+    df = df[df["capacity"] > 0].sort_values(["station_id", "date", "hour"])
+
+    df["prev_station"] = df["station_id"].shift(1)
+    df["prev_date"] = df["date"].shift(1)
+    df["prev_hour"] = df["hour"].shift(1)
+    df["is_consecutive"] = (df["station_id"] == df["prev_station"]) & (
+        ((df["hour"] - df["prev_hour"] == 1) & (df["date"] == df["prev_date"])) |
+        ((df["prev_hour"] == 23) & (df["hour"] == 0) & ((df["date"] - df["prev_date"]).dt.days == 1))
+    )
+    df["delta_bikes"] = df.groupby("station_id")["fill_rate"].diff() * df["capacity"]
+    df.loc[~df["is_consecutive"], "delta_bikes"] = None
+    df["departures"] = (-df["delta_bikes"]).clip(lower=0)
+    valid = df.dropna(subset=["departures"])
+
+    daily_trips = valid.groupby("date")["departures"].sum().reset_index()
+    base = {"generated_at": dt.datetime.utcnow().isoformat() + "Z", "ready": False}
+    if daily_trips.empty:
+        return base
+
+    start = daily_trips["date"].min().date()
+    end = daily_trips["date"].max().date()
+
+    try:
+        weather_df = weather.fetch_archive(start, end, lat=lat, lon=lon)
+    except Exception as e:
+        print(f"[stats_cities] meteo indisponible ({e}), stats meteo ignorees")
+        return base
+    if weather_df.empty:
+        return base
+
+    weather_df["date_local"] = weather_df["ts"].dt.tz_convert("Europe/Paris").dt.date
+    daily_precip = weather_df.groupby("date_local")["precipitation"].sum().reset_index()
+    daily_precip["date"] = pd.to_datetime(daily_precip["date_local"])
+
+    merged = daily_trips.merge(daily_precip[["date", "precipitation"]], on="date", how="inner")
+    if merged.empty:
+        return base
+    # Seuil pluie : plus de 1mm cumule sur la journee (seuil usuel en
+    # climatologie pour distinguer "jour de pluie" d'un simple crachin).
+    merged["is_rainy"] = merged["precipitation"] > 1.0
+
+    rainy = merged[merged["is_rainy"]]
+    dry = merged[~merged["is_rainy"]]
+    avg_rainy = float(rainy["departures"].mean()) if len(rainy) > 0 else None
+    avg_dry = float(dry["departures"].mean()) if len(dry) > 0 else None
+    ratio = round(avg_rainy / avg_dry, 2) if avg_rainy and avg_dry and avg_dry > 0 else None
+
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "ready": True,
+        "n_rainy_days": int(len(rainy)),
+        "n_dry_days": int(len(dry)),
+        "avg_trips_rainy_day": round(avg_rainy) if avg_rainy is not None else None,
+        "avg_trips_dry_day": round(avg_dry) if avg_dry is not None else None,
+        "rain_sensitivity_ratio": ratio,
+        "method_note": "Estimation de trajets par variation d'occupation (meme methode que la page trafic), "
+                       "croisee avec la pluviometrie quotidienne (Open-Meteo, seuil 1mm/jour).",
+    }
+
+
+
     if city_ids is None:
         city_ids = list_cities()  # Paris inclus, contrairement a forecast_cities.py
 
