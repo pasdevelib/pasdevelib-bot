@@ -460,6 +460,17 @@ def run_city(city_id: str) -> None:
             storage.upload_asset(RELEASE_STATS, out_path, f"weather_{city_id}.json")
             print(f"[stats_cities] {city_id}: weather_{city_id}.json uploade (ready={weather_stats.get('ready')})")
 
+        # Typologie des stations (pendulaire / loisir-weekend / mixte) —
+        # demande explicite, cf. compute_station_typology pour la limite
+        # methodologique importante (pas de vraie morphologie urbaine).
+        typology = compute_station_typology(hourly, names, zones)
+        typology["city_id"] = city_id
+        out_path = tmp_dir / f"typology_{city_id}.json"
+        out_path.write_text(json.dumps(typology, ensure_ascii=False))
+        storage.upload_asset(RELEASE_STATS, out_path, f"typology_{city_id}.json")
+        print(f"[stats_cities] {city_id}: typology_{city_id}.json uploade "
+              f"({typology['counts']}, {len(typology.get('by_zone') or [])} quartiers)")
+
 
 def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat: float, lon: float) -> dict:
     """Compare l'activite du reseau (trajets estimes/jour, meme methode que
@@ -532,7 +543,100 @@ def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat
     }
 
 
+def compute_station_typology(hourly: pd.DataFrame, names: dict[str, str], zones: dict[str, str]) -> dict:
+    """Classe chaque station selon son PROFIL D'USAGE TEMPOREL (pendulaire /
+    loisir-weekend / mixte) — demande explicite suite a un tour d'horizon
+    academique/journalistique sur les VLS ("typologie des stations").
 
+    LIMITE METHODOLOGIQUE IMPORTANTE (a rappeler cote UI) : ceci n'est PAS
+    une classification par morphologie urbaine reelle (densite, POI,
+    proximite transports) — ces donnees ne sont pas disponibles dans ce
+    projet. C'est une classification purement COMPORTEMENTALE, basee sur
+    la volatilite du taux de remplissage a differents moments : une
+    station "pendulaire" bouge beaucoup aux heures de pointe en semaine et
+    peu le week-end ; une station "loisir" bouge autant ou plus le
+    week-end qu'en semaine.
+    """
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["weekday"] = df["date"].dt.dayofweek  # 0=lundi ... 6=dimanche
+    df["is_weekend"] = df["weekday"] >= 5
+
+    commute_mask = (~df["is_weekend"]) & (df["hour"].between(7, 10) | df["hour"].between(17, 20))
+    midday_mask = (~df["is_weekend"]) & (df["hour"].between(11, 16))
+    weekend_mask = df["is_weekend"] & df["hour"].between(9, 20)
+
+    def _std_by_station(mask: pd.Series) -> pd.Series:
+        return df[mask].groupby("station_id")["fill_rate"].std()
+
+    commute_std = _std_by_station(commute_mask)
+    midday_std = _std_by_station(midday_mask)
+    weekend_std = _std_by_station(weekend_mask)
+    n_obs = df.groupby("station_id")["fill_rate"].count()
+
+    EPS = 0.01
+    stations = []
+    for sid in n_obs.index:
+        if n_obs[sid] < 24 * 7:  # au moins une semaine d'observations pour classer serieusement
+            continue
+        c = float(commute_std.get(sid, 0.0) or 0.0)
+        m = float(midday_std.get(sid, 0.0) or 0.0)
+        w = float(weekend_std.get(sid, 0.0) or 0.0)
+        commute_score = c / (m + EPS)
+        weekend_score = w / (c + EPS)
+
+        if commute_score > 1.3 and weekend_score < 0.7:
+            profile = "pendulaire"
+        elif weekend_score > 1.1:
+            profile = "loisir_weekend"
+        else:
+            profile = "mixte"
+
+        stations.append({
+            "station_id": sid,
+            "name": names.get(sid, sid),
+            "profile": profile,
+            "commute_score": round(commute_score, 2),
+            "weekend_score": round(weekend_score, 2),
+            "zone": zones.get(sid),
+        })
+
+    counts = {"pendulaire": 0, "loisir_weekend": 0, "mixte": 0}
+    for s in stations:
+        counts[s["profile"]] += 1
+
+    # Par quartier (si le geocodage est disponible pour cette ville) :
+    # profil dominant + repartition — sert de proxy a "l'effet quartier",
+    # faute de vraies donnees de morphologie urbaine (densite, pente,
+    # proximite metro/RER) que ce projet n'a pas.
+    by_zone: dict[str, dict] = {}
+    if zones:
+        for s in stations:
+            z = s["zone"]
+            if not z:
+                continue
+            by_zone.setdefault(z, {"pendulaire": 0, "loisir_weekend": 0, "mixte": 0, "n_stations": 0})
+            by_zone[z][s["profile"]] += 1
+            by_zone[z]["n_stations"] += 1
+    zone_summary = []
+    for zone, c in by_zone.items():
+        dominant = max(("pendulaire", "loisir_weekend", "mixte"), key=lambda k: c[k])
+        zone_summary.append({"zone": zone, "dominant_profile": dominant, **c})
+    zone_summary.sort(key=lambda z: z["n_stations"], reverse=True)
+
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "ready": len(stations) > 0,
+        "method_note": "Classification comportementale (volatilite du remplissage aux heures de "
+                       "pointe vs le week-end), PAS une classification par morphologie urbaine reelle "
+                       "(densite, POI, proximite transports) — ces donnees ne sont pas disponibles ici.",
+        "counts": counts,
+        "stations": stations,
+        "by_zone": zone_summary if by_zone else None,
+    }
+
+
+def run(city_ids: list[str] | None = None) -> None:
     if city_ids is None:
         city_ids = list_cities()  # Paris inclus, contrairement a forecast_cities.py
 
