@@ -309,7 +309,21 @@ def compute_traffic(hourly: pd.DataFrame, capacities: dict[str, str]) -> dict:
     # signal d'usage reel aux heures de pointe (constate directement : la
     # tranche "reste de la journee" dominait a 66% des departs estimes).
     df["departures"] = (-df["delta_bikes"]).clip(lower=0)
-    df["departures"] = df[["departures", "capacity"]].min(axis=1)
+    # BUG CORRIGE ICI : le plafond a la capacite totale de la station
+    # etait bien trop permissif pour filtrer les operations de camion de
+    # rebalancement (constate directement : ~260 000 "departs" estimes par
+    # jour a Paris, contre 93 000-160 000 mouvements officiels Velib' Metropole).
+    # Un camion peut deplacer 5-15 velos d'un coup sans jamais depasser la
+    # capacite totale d'une station de 30-40 places, donc l'ancien plafond
+    # ne filtrait que les cas les plus extremes. Remplace par un plafond
+    # statistique auto-calibre (percentile 90 de la distribution observee
+    # des baisses horaires par station) : les operations ponctuelles et
+    # massives de rebalancement sont ecretees, l'usage organique typique ne
+    # l'est pas.
+    if len(df["departures"]) > 0 and df["departures"].max() > 0:
+        p90 = df["departures"][df["departures"] > 0].quantile(0.90)
+        df["departures"] = df["departures"].clip(upper=p90)
+
 
     valid = df.dropna(subset=["departures"])
 
@@ -328,10 +342,12 @@ def compute_traffic(hourly: pd.DataFrame, capacities: dict[str, str]) -> dict:
 
     return {
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
-        "method_note": "Estimation de l'activité par variation nette d'occupation, station par station — ce n'est "
+        "method_note": "Estimation de l'activité par variation d'occupation, station par station — ce n'est "
                        "pas un comptage exact de trajets individuels. Seules les BAISSES de vélos disponibles sont "
-                       "comptées (les hausses sont ignorées) ; les operations de rééquilibrage (camions) peuvent "
-                       "encore déformer partiellement l'estimation, surtout la nuit.",
+                       "comptées (les hausses sont ignorées), et les baisses extrêmes (percentile 90) sont "
+                       "écrêtées pour limiter l'effet des opérations de rééquilibrage (camions). Cette estimation "
+                       "reste approximative — à comparer, à titre indicatif, aux 93 000-160 000 mouvements "
+                       "quotidiens officiels publiés par Vélib' Métropole selon la saison.",
         "bikes_per_hour": bikes_per_hour_list,
         "trips_per_day": trips_per_day_list,
     }
@@ -516,7 +532,21 @@ def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat
     # signal d'usage reel aux heures de pointe (constate directement : la
     # tranche "reste de la journee" dominait a 66% des departs estimes).
     df["departures"] = (-df["delta_bikes"]).clip(lower=0)
-    df["departures"] = df[["departures", "capacity"]].min(axis=1)
+    # BUG CORRIGE ICI : le plafond a la capacite totale de la station
+    # etait bien trop permissif pour filtrer les operations de camion de
+    # rebalancement (constate directement : ~260 000 "departs" estimes par
+    # jour a Paris, contre 93 000-160 000 mouvements officiels Velib' Metropole).
+    # Un camion peut deplacer 5-15 velos d'un coup sans jamais depasser la
+    # capacite totale d'une station de 30-40 places, donc l'ancien plafond
+    # ne filtrait que les cas les plus extremes. Remplace par un plafond
+    # statistique auto-calibre (percentile 90 de la distribution observee
+    # des baisses horaires par station) : les operations ponctuelles et
+    # massives de rebalancement sont ecretees, l'usage organique typique ne
+    # l'est pas.
+    if len(df["departures"]) > 0 and df["departures"].max() > 0:
+        p90 = df["departures"][df["departures"] > 0].quantile(0.90)
+        df["departures"] = df["departures"].clip(upper=p90)
+
     valid = df.dropna(subset=["departures"])
 
     daily_trips = valid.groupby("date")["departures"].sum().reset_index()
