@@ -33,9 +33,17 @@ def consolidate_city(city_id: str, tmp_dir: Path) -> None:
         return
 
     # Convertir en format hourly_history (fill_rate, has_velib, has_place)
+    # BUG CORRIGE ICI : date/hour etaient extraits directement du
+    # timestamp UTC, sans conversion en heure locale — toutes les
+    # analyses par heure (heatmap jour/heure, heures de pointe, effet
+    # meteo, typologie des stations) etaient donc decalees d'1h (hiver)
+    # ou 2h (ete) par rapport a la vraie heure francaise. Paris
+    # (aggregate.py) faisait deja cette conversion correctement ; seul ce
+    # chemin (villes secondaires) ne la faisait pas.
     df["fetched_at"] = pd.to_datetime(df["fetched_at"], utc=True, errors="coerce")
-    df["date"] = df["fetched_at"].dt.strftime("%Y-%m-%d")
-    df["hour"] = df["fetched_at"].dt.hour
+    paris_ts = df["fetched_at"].dt.tz_convert("Europe/Paris")
+    df["date"] = paris_ts.dt.strftime("%Y-%m-%d")
+    df["hour"] = paris_ts.dt.hour
 
     # Calculer fill_rate depuis num_bikes_available / capacity
     df["fill_rate"] = df.apply(

@@ -301,7 +301,15 @@ def compute_traffic(hourly: pd.DataFrame, capacities: dict[str, str]) -> dict:
     df["delta_bikes"] = df.groupby("station_id")["fill_rate"].diff() * df["capacity"]
     df.loc[~df["is_consecutive"], "delta_bikes"] = None
     # Departs estimes = diminutions (delta negatif), en valeur absolue.
+    # Plafond a la capacite de la station : au-dela, la variation ne
+    # peut plus correspondre a de l'usage organique (1 velo = 1 personne),
+    # c'est forcement une operation de rebalancement (camion) ou un artefact
+    # de donnees — cf. le method_note qui documente deja cette limite.
+    # Sans ce plafond, quelques operations de camion la nuit ecrasaient tout
+    # signal d'usage reel aux heures de pointe (constate directement : la
+    # tranche "reste de la journee" dominait a 66% des departs estimes).
     df["departures"] = (-df["delta_bikes"]).clip(lower=0)
+    df["departures"] = df[["departures", "capacity"]].min(axis=1)
 
     valid = df.dropna(subset=["departures"])
 
@@ -494,7 +502,15 @@ def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat
     )
     df["delta_bikes"] = df.groupby("station_id")["fill_rate"].diff() * df["capacity"]
     df.loc[~df["is_consecutive"], "delta_bikes"] = None
+    # Plafond a la capacite de la station : au-dela, la variation ne
+    # peut plus correspondre a de l'usage organique (1 velo = 1 personne),
+    # c'est forcement une operation de rebalancement (camion) ou un artefact
+    # de donnees — cf. le method_note qui documente deja cette limite.
+    # Sans ce plafond, quelques operations de camion la nuit ecrasaient tout
+    # signal d'usage reel aux heures de pointe (constate directement : la
+    # tranche "reste de la journee" dominait a 66% des departs estimes).
     df["departures"] = (-df["delta_bikes"]).clip(lower=0)
+    df["departures"] = df[["departures", "capacity"]].min(axis=1)
     valid = df.dropna(subset=["departures"])
 
     daily_trips = valid.groupby("date")["departures"].sum().reset_index()
@@ -575,30 +591,64 @@ def compute_station_typology(hourly: pd.DataFrame, names: dict[str, str], zones:
     n_obs = df.groupby("station_id")["fill_rate"].count()
 
     EPS = 0.01
-    stations = []
+    # Premiere passe : calcule les scores de toutes les stations avant de
+    # classer, pour pouvoir utiliser des SEUILS RELATIFS (terciles) plutot
+    # que des seuils absolus arbitraires. BUG CORRIGE ICI : les seuils
+    # absolus choisis initialement (commute_score > 1.3, weekend_score
+    # < 0.7 / > 1.1) etaient devines sans avoir vu la distribution reelle
+    # des donnees, et faisaient tomber ~82% des stations dans "mixte" (le
+    # constat direct sur la page Donnees) — un seuil absolu qui ne
+    # correspond pas a l'echelle reelle des scores rend la classification
+    # inutilisable. Les terciles s'auto-calibrent quelle que soit l'echelle.
+    raw_scores = []
     for sid in n_obs.index:
         if n_obs[sid] < 24 * 7:  # au moins une semaine d'observations pour classer serieusement
             continue
         c = float(commute_std.get(sid, 0.0) or 0.0)
         m = float(midday_std.get(sid, 0.0) or 0.0)
         w = float(weekend_std.get(sid, 0.0) or 0.0)
-        commute_score = c / (m + EPS)
-        weekend_score = w / (c + EPS)
+        raw_scores.append({
+            "station_id": sid,
+            "commute_score": c / (m + EPS),
+            "weekend_score": w / (c + EPS),
+        })
 
-        if commute_score > 1.3 and weekend_score < 0.7:
+    if not raw_scores:
+        return {
+            "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+            "ready": False,
+            "method_note": "Pas assez d'historique pour classer les stations (minimum 1 semaine d'observations).",
+            "counts": {"pendulaire": 0, "loisir_weekend": 0, "mixte": 0},
+            "stations": [],
+            "by_zone": None,
+        }
+
+    commute_values = [s["commute_score"] for s in raw_scores]
+    weekend_values = [s["weekend_score"] for s in raw_scores]
+    commute_p66 = float(np.percentile(commute_values, 66))
+    weekend_p66 = float(np.percentile(weekend_values, 66))
+    weekend_p33 = float(np.percentile(weekend_values, 33))
+
+    stations = []
+    for s in raw_scores:
+        commute_score, weekend_score = s["commute_score"], s["weekend_score"]
+        # Tercile superieur de commute_score ET tercile inferieur de
+        # weekend_score = profil le plus marque "actif en semaine, calme
+        # le week-end".
+        if commute_score >= commute_p66 and weekend_score <= weekend_p33:
             profile = "pendulaire"
-        elif weekend_score > 1.1:
+        elif weekend_score >= weekend_p66:
             profile = "loisir_weekend"
         else:
             profile = "mixte"
 
         stations.append({
-            "station_id": sid,
-            "name": names.get(sid, sid),
+            "station_id": s["station_id"],
+            "name": names.get(s["station_id"], s["station_id"]),
             "profile": profile,
             "commute_score": round(commute_score, 2),
             "weekend_score": round(weekend_score, 2),
-            "zone": zones.get(sid),
+            "zone": zones.get(s["station_id"]),
         })
 
     counts = {"pendulaire": 0, "loisir_weekend": 0, "mixte": 0}
@@ -627,9 +677,10 @@ def compute_station_typology(hourly: pd.DataFrame, names: dict[str, str], zones:
     return {
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
         "ready": len(stations) > 0,
-        "method_note": "Classification comportementale (volatilite du remplissage aux heures de "
-                       "pointe vs le week-end), PAS une classification par morphologie urbaine reelle "
-                       "(densite, POI, proximite transports) — ces donnees ne sont pas disponibles ici.",
+        "method_note": "Classification comportementale par terciles relatifs (volatilite du remplissage "
+                       "aux heures de pointe vs le week-end, comparee entre stations), PAS une classification "
+                       "par morphologie urbaine reelle (densite, POI, proximite transports) — ces donnees ne "
+                       "sont pas disponibles ici.",
         "counts": counts,
         "stations": stations,
         "by_zone": zone_summary if by_zone else None,
