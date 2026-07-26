@@ -320,9 +320,19 @@ def compute_traffic(hourly: pd.DataFrame, capacities: dict[str, str]) -> dict:
     # des baisses horaires par station) : les operations ponctuelles et
     # massives de rebalancement sont ecretees, l'usage organique typique ne
     # l'est pas.
-    if len(df["departures"]) > 0 and df["departures"].max() > 0:
-        p90 = df["departures"][df["departures"] > 0].quantile(0.90)
-        df["departures"] = df["departures"].clip(upper=p90)
+    # REECRIT ICI : le plafond precedent utilisait UN SEUL percentile 90
+    # calcule sur TOUTES les stations melangees — une grande station tres
+    # frequentee et une petite station peu active n'ont pas la meme echelle
+    # naturelle d'activite, donc un seuil global ecretait trop les petites
+    # stations et pas assez les grandes. Plafond desormais calcule PAR
+    # STATION (chaque station comparee a son propre historique), ce qui
+    # respecte l'echelle propre de chacune plutot que d'imposer une norme
+    # unique a tout le reseau.
+    if len(df) > 0:
+        station_p90 = df.groupby("station_id")["departures"].transform(
+            lambda x: x.quantile(0.90) if (x > 0).any() else 0
+        )
+        df["departures"] = np.minimum(df["departures"], station_p90)
 
 
     valid = df.dropna(subset=["departures"])
@@ -344,10 +354,11 @@ def compute_traffic(hourly: pd.DataFrame, capacities: dict[str, str]) -> dict:
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
         "method_note": "Estimation de l'activité par variation d'occupation, station par station — ce n'est "
                        "pas un comptage exact de trajets individuels. Seules les BAISSES de vélos disponibles sont "
-                       "comptées (les hausses sont ignorées), et les baisses extrêmes (percentile 90) sont "
-                       "écrêtées pour limiter l'effet des opérations de rééquilibrage (camions). Cette estimation "
-                       "reste approximative — à comparer, à titre indicatif, aux 93 000-160 000 mouvements "
-                       "quotidiens officiels publiés par Vélib' Métropole selon la saison.",
+                       "comptées (les hausses sont ignorées), et les baisses extrêmes (au-delà du percentile 90 "
+                       "propre à chaque station) sont écrêtées pour limiter l'effet des opérations de "
+                       "rééquilibrage (camions). Cette estimation reste approximative — à comparer, à titre "
+                       "indicatif, aux 93 000-160 000 mouvements quotidiens officiels publiés par Vélib' "
+                       "Métropole selon la saison.",
         "bikes_per_hour": bikes_per_hour_list,
         "trips_per_day": trips_per_day_list,
     }
@@ -543,9 +554,19 @@ def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat
     # des baisses horaires par station) : les operations ponctuelles et
     # massives de rebalancement sont ecretees, l'usage organique typique ne
     # l'est pas.
-    if len(df["departures"]) > 0 and df["departures"].max() > 0:
-        p90 = df["departures"][df["departures"] > 0].quantile(0.90)
-        df["departures"] = df["departures"].clip(upper=p90)
+    # REECRIT ICI : le plafond precedent utilisait UN SEUL percentile 90
+    # calcule sur TOUTES les stations melangees — une grande station tres
+    # frequentee et une petite station peu active n'ont pas la meme echelle
+    # naturelle d'activite, donc un seuil global ecretait trop les petites
+    # stations et pas assez les grandes. Plafond desormais calcule PAR
+    # STATION (chaque station comparee a son propre historique), ce qui
+    # respecte l'echelle propre de chacune plutot que d'imposer une norme
+    # unique a tout le reseau.
+    if len(df) > 0:
+        station_p90 = df.groupby("station_id")["departures"].transform(
+            lambda x: x.quantile(0.90) if (x > 0).any() else 0
+        )
+        df["departures"] = np.minimum(df["departures"], station_p90)
 
     valid = df.dropna(subset=["departures"])
 
