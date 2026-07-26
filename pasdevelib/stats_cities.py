@@ -328,7 +328,10 @@ def compute_traffic(hourly: pd.DataFrame, capacities: dict[str, str]) -> dict:
 
     return {
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
-        "method_note": "Estimation par variation nette d'occupation station par station (pas un comptage exact de trajets individuels)",
+        "method_note": "Estimation de l'activité par variation nette d'occupation, station par station — ce n'est "
+                       "pas un comptage exact de trajets individuels. Seules les BAISSES de vélos disponibles sont "
+                       "comptées (les hausses sont ignorées) ; les operations de rééquilibrage (camions) peuvent "
+                       "encore déformer partiellement l'estimation, surtout la nuit.",
         "bikes_per_hour": bikes_per_hour_list,
         "trips_per_day": trips_per_day_list,
     }
@@ -394,6 +397,9 @@ def compute_stuck_stations(hourly: pd.DataFrame, names: dict[str, str]) -> dict:
 
     return {
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "method_note": "Seuils « vide » (≤5% de remplissage) et « pleine » (≥95%) : des conventions pratiques "
+                       "pour repérer les cas extrêmes, pas des vérités absolues. Minimum 6h consécutives pour "
+                       "qu'une séquence soit retenue.",
         "longest_empty": empty_results[:10],
         "longest_full": full_results[:10],
     }
@@ -554,8 +560,9 @@ def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat
         "avg_trips_rainy_day": round(avg_rainy) if avg_rainy is not None else None,
         "avg_trips_dry_day": round(avg_dry) if avg_dry is not None else None,
         "rain_sensitivity_ratio": ratio,
-        "method_note": "Estimation de trajets par variation d'occupation (meme methode que la page trafic), "
-                       "croisee avec la pluviometrie quotidienne (Open-Meteo, seuil 1mm/jour).",
+        "method_note": "Estimation de l'activité par variation d'occupation (même méthode que la page trafic), "
+                       "croisée avec la pluviométrie quotidienne (Open-Meteo). Seuil « jour de pluie » : plus de "
+                       "1mm cumulé — une convention pratique parmi d'autres possibles, pas une frontière absolue.",
     }
 
 
