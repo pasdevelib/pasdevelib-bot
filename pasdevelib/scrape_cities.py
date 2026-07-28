@@ -63,7 +63,7 @@ def run(city_ids: list[str] | None = None) -> None:
                 storage.upload_asset(RELEASE_CITIES, city_path, f"current_day_{city_id}.parquet")
                 print(f"[scrape_cities] current_day_{city_id}.parquet uploadé ({len(city_df)} stations)")
             except Exception as e:
-                # Isolation par ville (demande de Théo) : un echec d'upload
+                # Isolation par ville : un echec d'upload
                 # pour une ville ne doit pas empecher les autres.
                 print(f"[scrape_cities] {city_id}: ECHEC upload ({e})")
 

@@ -89,7 +89,7 @@ def run(city_ids: list[str] | None = None) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         for city_id in city_ids:
-            # Isolation explicite (demande de Théo) : un plantage sur UNE
+            # Isolation explicite : un plantage sur UNE
             # ville (donnee malformee, bug specifique a son format) ne doit
             # jamais empecher les autres villes de la meme execution
             # d'etre traitees. En pratique chaque ville tourne deja dans
