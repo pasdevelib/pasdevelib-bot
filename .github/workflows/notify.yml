@@ -32,7 +32,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_EMAIL: mailto:hello@pasdevelib.app
+          VAPID_EMAIL: https://blog.pasdevelib.app/contact
           SITE_URL: https://pasdevelib.app
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m pasdevelib.notify

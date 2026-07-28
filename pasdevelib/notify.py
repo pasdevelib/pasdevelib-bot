@@ -18,7 +18,7 @@ from pywebpush import webpush, WebPushException
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 VAPID_PRIVATE = os.environ["VAPID_PRIVATE_KEY"]
-VAPID_EMAIL = os.environ.get("VAPID_EMAIL", "mailto:hello@pasdevelib.app")
+VAPID_EMAIL = os.environ.get("VAPID_EMAIL", "https://blog.pasdevelib.app/contact")
 SITE_URL = os.environ.get("SITE_URL", "https://pasdevelib.app")
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
