@@ -8,11 +8,9 @@ Nous nous engageons à répondre sous 72 heures et à corriger toute vulnérabil
 
 ## Périmètre
 
-Ce dépôt contient le bot de collecte et de prédiction. Il tourne exclusivement via GitHub Actions et n'expose aucun service réseau directement.
+Ce dépôt ne traite que des données publiques et n'expose aucun service réseau directement accessible. Aucune donnée personnelle n'y est manipulée.
 
-Les données traitées sont des données publiques (API GBFS Vélib' Métropole, Open-Meteo). Aucune donnée personnelle n'est manipulée dans ce bot.
+## Hors périmètre
 
-## Ce qui n'est pas dans le périmètre
-
-- Vulnérabilités dans les dépendances tierces (signalez-les directement aux mainteneurs concernés)
-- Problèmes liés à l'application web : signalez-les sur [pasdevelib.app/contributions](https://pasdevelib.app/contributions)
+- Vulnérabilités de dépendances tierces (à signaler directement à leurs mainteneurs)
+- Problèmes liés à l'application web : [pasdevelib.app/contributions](https://pasdevelib.app/contributions)

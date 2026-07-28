@@ -6,13 +6,13 @@ Merci de votre intérêt pour le projet.
 
 Ouvrez une [issue GitHub](https://github.com/pasdevelib/pasdevelib-bot/issues) en décrivant :
 
-- Ce qui se passe (message d'erreur, workflow concerné)
+- Ce qui se passe
 - Ce qui était attendu
-- Les étapes pour reproduire
+- Les étapes pour reproduire, si possible
 
 ## Proposer une amélioration
 
-Ouvrez une issue avant d'ouvrir une pull request. Les grandes évolutions sont discutées en amont pour éviter les travaux inutiles.
+Ouvrez une issue avant toute pull request — les évolutions importantes sont discutées en amont.
 
 ## Pour les retours sur l'app (pas le code)
 
@@ -25,5 +25,5 @@ En soumettant une pull request, vous acceptez que votre contribution soit publi�
 ## Ce qu'on n'accepte pas
 
 - Pull requests sans issue associée
-- Ajout de dépendances lourdes sans justification
-- Fonctionnalités qui nécessitent une infrastructure payante
+- Dépendances lourdes sans justification claire
+- Fonctionnalités nécessitant une infrastructure payante
