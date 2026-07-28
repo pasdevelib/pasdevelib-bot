@@ -2,7 +2,7 @@
 
 Si vous découvrez une vulnérabilité de sécurité dans ce projet, **n'ouvrez pas d'issue publique**.
 
-Utilisez le formulaire de contact sur [pasdevelib.app/contributions](https://pasdevelib.app/contributions) en sélectionnant le type "Bug".
+Utilisez le formulaire de contact sur [blog.pasdevelib.app/contact](https://blog.pasdevelib.app/contact).
 
 Nous nous engageons à répondre sous 72 heures et à corriger toute vulnérabilité confirmée dans les meilleurs délais.
 
