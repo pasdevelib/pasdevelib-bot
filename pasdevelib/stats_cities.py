@@ -206,14 +206,22 @@ def compute_evolution(hourly: pd.DataFrame) -> dict:
     df = hourly.copy()
     df["date"] = pd.to_datetime(df["date"])
     end = df["date"].max()
-    start = end - pd.Timedelta(days=EVOLUTION_DAYS - 1)
-    window = df[df["date"] >= start]
+    start_cutoff = end - pd.Timedelta(days=EVOLUTION_DAYS - 1)
+    window = df[df["date"] >= start_cutoff]
 
     daily = window.groupby("date")["fill_rate"].mean().reset_index()
     daily = daily.sort_values("date")
+    # BUG CORRIGE ICI : window_start etait calcule comme "EVOLUTION_DAYS
+    # jours avant la derniere donnee", QUE CES JOURS AIENT REELLEMENT DES
+    # DONNEES OU NON — trompeur pour une ville dont l'historique vient
+    # tout juste de commencer (ex. 1 seul jour reel disponible), qui
+    # affichait quand meme une fenetre "89 jours" alors que `series` ne
+    # contenait qu'un seul point. window_start reflete desormais la VRAIE
+    # date la plus ancienne effectivement presente dans les donnees.
+    real_start = daily["date"].min() if not daily.empty else end
     return {
         "generated_at": dt.datetime.utcnow().isoformat() + "Z",
-        "window_start": start.date().isoformat(),
+        "window_start": real_start.date().isoformat(),
         "window_end": end.date().isoformat(),
         "series": [
             {"date": row.date.date().isoformat(), "avg_fill_rate": round(float(row.fill_rate), 3)}
