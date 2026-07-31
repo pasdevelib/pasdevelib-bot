@@ -751,11 +751,18 @@ def run(city_ids: list[str] | None = None) -> None:
 
     storage.ensure_release(RELEASE_STATS, "Classements de stations par ville (vides / pleines / fiables)")
 
+    failures = []
     for city_id in city_ids:
         try:
             run_city(city_id)
         except Exception as e:
             print(f"[stats_cities] {city_id}: ECHEC ({e}) — villes suivantes non affectees")
+            failures.append(city_id)
+
+    # Meme correctif de visibilite que consolidate_cities.py : un echec ne
+    # doit pas se limiter a un print jamais consulte.
+    if failures:
+        raise SystemExit(f"[stats_cities] echec pour : {', '.join(failures)}")
 
 
 if __name__ == "__main__":

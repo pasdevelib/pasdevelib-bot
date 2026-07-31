@@ -16,7 +16,6 @@ from pasdevelib.cities import list_cities
 RELEASE_CITIES_LIVE = "cities-live"
 RELEASE_CITIES_HISTORY = "cities-history"
 
-
 def consolidate_city(city_id: str, tmp_dir: Path) -> None:
     """Consolide le current_day d'une ville en historique horaire."""
     asset_name = f"current_day_{city_id}.parquet"
@@ -86,8 +85,19 @@ def run(city_ids: list[str] | None = None) -> None:
     now = dt.datetime.now(dt.timezone.utc)
     print(f"[consolidate_cities] {now.isoformat()}")
 
+    # BUG CORRIGE ICI : cet appel manquait entierement. upload_asset() vers
+    # RELEASE_CITIES_HISTORY echouait silencieusement depuis la creation de
+    # ce fichier (release jamais creee, gh release upload echoue sur un tag
+    # inexistant) — l'exception etait avalee par le try/except plus bas,
+    # qui n'affectait que l'AFFICHAGE ("succes" du workflow malgre l'echec
+    # reel), sans qu'aucun historique ne soit jamais accumule pour aucune
+    # ville secondaire (Bordeaux, Lyon, Toulouse, Lille, Rennes,
+    # Strasbourg...) depuis le debut de ce pipeline.
+    storage.ensure_release(RELEASE_CITIES_HISTORY, "Historique horaire consolidé par ville")
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
+        failures = []
         for city_id in city_ids:
             # Isolation explicite : un plantage sur UNE
             # ville (donnee malformee, bug specifique a son format) ne doit
@@ -100,6 +110,18 @@ def run(city_ids: list[str] | None = None) -> None:
                 consolidate_city(city_id, tmp_dir)
             except Exception as e:
                 print(f"[consolidate_cities] {city_id}: ECHEC ({e}) — villes suivantes non affectees")
+                failures.append(city_id)
+
+        # BUG CORRIGE ICI : ces echecs n'etaient auparavant visibles que
+        # dans les logs (jamais consultes en pratique) — le workflow
+        # terminait toujours en "succes" meme si TOUTES les villes avaient
+        # echoue, exactement le scenario qui a masque plusieurs semaines
+        # de consolidation cassee sans que personne ne le remarque.
+        # Desormais, un code de sortie non-nul fait apparaitre le workflow
+        # en rouge sur GitHub Actions (et donc sur statut.pasdevelib.app),
+        # tout en ayant deja traite les villes qui ont reussi.
+        if failures:
+            raise SystemExit(f"[consolidate_cities] echec pour : {', '.join(failures)}")
 
 
 if __name__ == "__main__":
