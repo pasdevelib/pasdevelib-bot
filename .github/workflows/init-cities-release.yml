@@ -23,6 +23,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Créer la release cities-live
-          gh release create cities-live --repo pasdevelib/pasdevelib-bot --title "Cities Live Data" --notes "Live data for Bordeaux, Lyon, Toulouse" 2>/dev/null || true
+          gh release create cities-live --repo pasdevelib/pdv-bot --title "Cities Live Data" --notes "Live data for Bordeaux, Lyon, Toulouse" 2>/dev/null || true
           # Scraper les 3 villes
           python -m pasdevelib.scrape_cities --cities bordeaux lyon toulouse

@@ -23,5 +23,5 @@ jobs:
       - name: Check freshness
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: pasdevelib/pasdevelib-bot
+          GITHUB_REPOSITORY: pasdevelib/pdv-bot
         run: python -m pasdevelib.watchdog

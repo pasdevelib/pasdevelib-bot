@@ -4,7 +4,7 @@ Merci de votre intérêt pour le projet.
 
 ## Signaler un bug technique
 
-Ouvrez une [issue GitHub](https://github.com/pasdevelib/pasdevelib-bot/issues) en décrivant :
+Ouvrez une [issue GitHub](https://github.com/pasdevelib/pdv-bot/issues) en décrivant :
 
 - Ce qui se passe
 - Ce qui était attendu

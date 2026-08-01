@@ -36,4 +36,4 @@ jobs:
           TAG="backup-${YESTERDAY}"
           echo "Uploading to release ${TAG}..."
           gh release upload "${TAG}" metrics__accuracy.json --clobber \
-            --repo pasdevelib/pasdevelib-bot
+            --repo pasdevelib/pdv-bot

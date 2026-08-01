@@ -15,7 +15,7 @@ This gives us:
 Environment variables
 ---------------------
 GITHUB_TOKEN      Required. Token with `contents: write` on the bot repo.
-GITHUB_REPOSITORY Set automatically by Actions (e.g. `pasdevelib/pasdevelib-bot`).
+GITHUB_REPOSITORY Set automatically by Actions (e.g. `pasdevelib/pdv-bot`).
 
 Usage
 -----

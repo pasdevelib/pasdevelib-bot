@@ -15,8 +15,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://pasdevelib.app"
-Repository = "https://github.com/pasdevelib/pasdevelib-bot"
-"Bug Tracker" = "https://github.com/pasdevelib/pasdevelib-bot/issues"
+Repository = "https://github.com/pasdevelib/pdv-bot"
+"Bug Tracker" = "https://github.com/pasdevelib/pdv-bot/issues"
 
 [build-system]
 requires = ["setuptools>=68"]

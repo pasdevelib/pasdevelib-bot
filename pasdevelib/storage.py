@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "pasdevelib/pasdevelib-bot")
+REPO = os.environ.get("GITHUB_REPOSITORY", "pasdevelib/pdv-bot")
 
 # Mapping logique
 RELEASE_LIVE = "live"
