@@ -520,6 +520,17 @@ def run_city(city_id: str) -> None:
         print(f"[stats_cities] {city_id}: typology_{city_id}.json uploade "
               f"({typology['counts']}, {len(typology.get('by_zone') or [])} quartiers)")
 
+        # Signature des trajets du matin (exportateur/importateur par
+        # quartier) — cf. compute_morning_signature pour le detail et la
+        # limite methodologique.
+        morning_sig = compute_morning_signature(hourly, zones)
+        morning_sig["city_id"] = city_id
+        out_path = tmp_dir / f"morning_signature_{city_id}.json"
+        out_path.write_text(json.dumps(morning_sig, ensure_ascii=False))
+        storage.upload_asset(RELEASE_STATS, out_path, f"morning_signature_{city_id}.json")
+        print(f"[stats_cities] {city_id}: morning_signature_{city_id}.json uploade "
+              f"({len(morning_sig.get('zones') or [])} quartiers, ready={morning_sig.get('ready')})")
+
 
 def compute_weather_impact(hourly: pd.DataFrame, capacities: dict[str, str], lat: float, lon: float) -> dict:
     """Compare l'activite du reseau (trajets estimes/jour, meme methode que
@@ -750,6 +761,65 @@ def compute_station_typology(hourly: pd.DataFrame, names: dict[str, str], zones:
         "counts": counts,
         "stations": stations,
         "by_zone": zone_summary if by_zone else None,
+    }
+
+
+def compute_morning_signature(hourly: pd.DataFrame, zones: dict[str, str]) -> dict:
+    """Par quartier, compare le remplissage moyen a midi en semaine (11h-14h)
+    a celui du matin en semaine (7h-9h) — inspire d'un projet tiers
+    (kardol.us/velib) repere lors d'une veille sur des dashboards Velib'
+    existants.
+
+    signature = remplissage_midi - remplissage_matin
+    - Positif ("exportateur") : le remplissage est bas le matin (les velos
+      partent) puis remonte a midi -> quartier plutot residentiel.
+    - Negatif ("importateur") : le remplissage est deja haut le matin (les
+      velos arrivent) puis se stabilise/redescend a midi -> quartier
+      plutot zone d'emploi.
+
+    LIMITE METHODOLOGIQUE (a rappeler cote UI, meme esprit que
+    compute_station_typology) : lit l'ETAT des bornes (taux de
+    remplissage), pas des trajets comptes individuellement — moins
+    biaise par le rebalancement par camion qu'une metrique de flux, mais
+    une forte activite de camions un matin donne peut quand meme deplacer
+    le signal. Signal relatif entre quartiers, pas un comptage de trajets.
+    """
+    df = hourly.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["weekday"] = df["date"].dt.dayofweek
+    df["zone"] = df["station_id"].astype(str).map(zones).fillna("Non classé")
+
+    weekday_df = df[df["weekday"] < 5]
+    morning = weekday_df[weekday_df["hour"].between(7, 9)]
+    midday = weekday_df[weekday_df["hour"].between(11, 14)]
+
+    morning_by_zone = morning.groupby("zone")["fill_rate"].mean()
+    midday_by_zone = midday.groupby("zone")["fill_rate"].mean()
+    n_obs_by_zone = weekday_df.groupby("zone")["fill_rate"].count()
+
+    zones_out = []
+    for zone in sorted(set(morning_by_zone.index) & set(midday_by_zone.index)):
+        if n_obs_by_zone.get(zone, 0) < 24 * 5:  # au moins une semaine de donnees en semaine
+            continue
+        m = float(morning_by_zone[zone])
+        d = float(midday_by_zone[zone])
+        zones_out.append({
+            "zone": zone,
+            "morning_fill_rate": round(m, 3),
+            "midday_fill_rate": round(d, 3),
+            "signature": round(d - m, 3),
+            "profile": "exportateur" if (d - m) > 0.02 else "importateur" if (d - m) < -0.02 else "équilibré",
+        })
+
+    zones_out.sort(key=lambda z: z["signature"], reverse=True)
+
+    return {
+        "generated_at": dt.datetime.utcnow().isoformat() + "Z",
+        "ready": len(zones_out) > 0,
+        "method_note": "Compare le remplissage moyen en semaine a midi (11h-14h) contre le matin (7h-9h), "
+                       "par quartier. Lit l'etat des bornes, pas des trajets comptes — signal relatif entre "
+                       "quartiers, a lire avec prudence en cas de forte activite de camions de rebalancement.",
+        "zones": zones_out,
     }
 
 
